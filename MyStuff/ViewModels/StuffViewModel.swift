@@ -13,6 +13,13 @@ final class StuffViewModel {
     var searchText: String = ""
     var isLoading: Bool = false
     var errorMessage: String?
+    var categories: [Category] = []
+    var selectedGrouping: GroupingMode = .location
+
+    enum GroupingMode: String, CaseIterable {
+        case location = "Location"
+        case category = "Category"
+    }
 
     // MARK: - Private
 
@@ -47,6 +54,25 @@ final class StuffViewModel {
         items.filter { $0.locationId == location.id }.count
     }
 
+    // MARK: - Category Computed
+
+    var uncategorizedItems: [Item] {
+        items.filter { $0.categoryId == nil }
+    }
+
+    func items(for category: Category) -> [Item] {
+        items.filter { $0.categoryId == category.id }
+    }
+
+    func category(for item: Item) -> Category? {
+        guard let categoryId = item.categoryId else { return nil }
+        return categories.first { $0.id == categoryId }
+    }
+
+    func itemCount(for category: Category) -> Int {
+        items.filter { $0.categoryId == category.id }.count
+    }
+
     // MARK: - Data Loading
 
     func loadData() async {
@@ -55,8 +81,10 @@ final class StuffViewModel {
         do {
             async let fetchedItems = service.fetchItems()
             async let fetchedLocations = service.fetchLocations()
+            async let fetchedCategories = service.fetchCategories()
             items = try await fetchedItems
             locations = try await fetchedLocations
+            categories = try await fetchedCategories
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -65,8 +93,8 @@ final class StuffViewModel {
 
     // MARK: - Item CRUD
 
-    func addItem(name: String, notes: String?, locationId: String?) async {
-        let item = Item(name: name, notes: notes, locationId: locationId)
+    func addItem(name: String, notes: String?, locationId: String?, categoryId: String?) async {
+        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
         do {
             try await service.addItem(item)
             items.append(item)
@@ -147,6 +175,45 @@ final class StuffViewModel {
             // Unassign items that were at this location
             for i in items.indices where items[i].locationId == location.id {
                 items[i].locationId = nil
+                items[i].updatedAt = .now
+            }
+            HapticManager.impact()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Category CRUD
+
+    func addCategory(name: String) async {
+        let category = Category(name: name)
+        do {
+            try await service.addCategory(category)
+            categories.append(category)
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateCategory(_ category: Category) async {
+        do {
+            try await service.updateCategory(category)
+            if let index = categories.firstIndex(where: { $0.id == category.id }) {
+                categories[index] = category
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteCategory(_ category: Category) async {
+        do {
+            try await service.deleteCategory(category)
+            categories.removeAll { $0.id == category.id }
+            for i in items.indices where items[i].categoryId == category.id {
+                items[i].categoryId = nil
                 items[i].updatedAt = .now
             }
             HapticManager.impact()
