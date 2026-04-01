@@ -24,12 +24,23 @@ struct ItemsView: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        CategoryManagementView(viewModel: viewModel)
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                }
             }
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
                     locations: viewModel.locations,
-                    onSave: { name, notes, locationId in
-                        Task { await viewModel.addItem(name: name, notes: notes, locationId: locationId) }
+                    categories: viewModel.categories,
+                    onSave: { name, notes, locationId, categoryId in
+                        Task { await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId) }
+                    },
+                    onCreateCategory: { name in
+                        Task { await viewModel.addCategory(name: name) }
                     }
                 )
             }
@@ -37,12 +48,17 @@ struct ItemsView: View {
                 ItemFormSheet(
                     item: item,
                     locations: viewModel.locations,
-                    onSave: { name, notes, locationId in
+                    categories: viewModel.categories,
+                    onSave: { name, notes, locationId, categoryId in
                         var updated = item
                         updated.name = name
                         updated.notes = notes
                         updated.locationId = locationId
+                        updated.categoryId = categoryId
                         Task { await viewModel.updateItem(updated) }
+                    },
+                    onCreateCategory: { name in
+                        Task { await viewModel.addCategory(name: name) }
                     }
                 )
             }
@@ -132,22 +148,37 @@ struct ItemsView: View {
 struct ItemFormSheet: View {
     let item: Item?
     let locations: [Location]
-    let onSave: (String, String?, String?) -> Void
+    let categories: [Category]
+    let onSave: (String, String?, String?, String?) -> Void
+    let onCreateCategory: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var notes: String
     @State private var selectedLocationId: String
+    @State private var selectedCategoryId: String
+    @State private var showingNewCategory = false
+    @State private var newCategoryName = ""
 
     private let unassignedSentinel = "__unassigned__"
+    private let uncategorizedSentinel = "__uncategorized__"
 
-    init(item: Item? = nil, locations: [Location], onSave: @escaping (String, String?, String?) -> Void) {
+    init(
+        item: Item? = nil,
+        locations: [Location],
+        categories: [Category],
+        onSave: @escaping (String, String?, String?, String?) -> Void,
+        onCreateCategory: @escaping (String) -> Void
+    ) {
         self.item = item
         self.locations = locations
+        self.categories = categories
         self.onSave = onSave
+        self.onCreateCategory = onCreateCategory
         _name = State(initialValue: item?.name ?? "")
         _notes = State(initialValue: item?.notes ?? "")
         _selectedLocationId = State(initialValue: item?.locationId ?? "__unassigned__")
+        _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
     }
 
     var body: some View {
@@ -172,6 +203,19 @@ struct ItemFormSheet: View {
                         }
                     }
                 }
+
+                Section("Category") {
+                    Picker("Category", selection: $selectedCategoryId) {
+                        Text("Uncategorized").tag(uncategorizedSentinel)
+                        ForEach(categories) { category in
+                            Text(category.name).tag(category.id)
+                        }
+                    }
+
+                    Button("New Category...") {
+                        showingNewCategory = true
+                    }
+                }
             }
             .navigationTitle(item == nil ? "New Item" : "Edit Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -182,10 +226,24 @@ struct ItemFormSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
-                        onSave(name, notes.isEmpty ? nil : notes, locationId)
+                        let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
+                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .alert("New Category", isPresented: $showingNewCategory) {
+                TextField("Category name", text: $newCategoryName)
+                Button("Add") {
+                    let trimmed = newCategoryName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty {
+                        onCreateCategory(trimmed)
+                        newCategoryName = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    newCategoryName = ""
                 }
             }
         }
