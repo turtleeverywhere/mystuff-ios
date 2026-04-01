@@ -7,7 +7,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if viewModel.items.isEmpty && viewModel.locations.isEmpty {
+                if viewModel.items.isEmpty && viewModel.locations.isEmpty && viewModel.categories.isEmpty {
                     emptyState
                 } else {
                     mainContent
@@ -32,17 +32,48 @@ struct HomeView: View {
     private var mainContent: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                // Locations with their items
-                ForEach(viewModel.locations) { location in
-                    locationCard(location)
+                // Grouping picker
+                Picker("Group by", selection: $viewModel.selectedGrouping) {
+                    ForEach(StuffViewModel.GroupingMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
 
-                // Unassigned items
-                if !viewModel.unassignedItems.isEmpty {
-                    unassignedCard
+                switch viewModel.selectedGrouping {
+                case .location:
+                    locationGrouping
+                case .category:
+                    categoryGrouping
                 }
             }
             .padding()
+        }
+    }
+
+    // MARK: - Location Grouping (existing behavior)
+
+    private var locationGrouping: some View {
+        Group {
+            ForEach(viewModel.locations) { location in
+                locationCard(location)
+            }
+            if !viewModel.unassignedItems.isEmpty {
+                unassignedLocationCard
+            }
+        }
+    }
+
+    // MARK: - Category Grouping
+
+    private var categoryGrouping: some View {
+        Group {
+            ForEach(viewModel.categories) { category in
+                categoryCard(category)
+            }
+            if !viewModel.uncategorizedItems.isEmpty {
+                uncategorizedCard
+            }
         }
     }
 
@@ -72,7 +103,7 @@ struct HomeView: View {
                     .padding(.vertical, 4)
             } else {
                 ForEach(locationItems) { item in
-                    itemRow(item)
+                    itemRow(item, tag: categoryTag(for: item))
                 }
             }
         }
@@ -80,9 +111,9 @@ struct HomeView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Unassigned Card
+    // MARK: - Unassigned Location Card
 
-    private var unassignedCard: some View {
+    private var unassignedLocationCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("❓")
@@ -99,7 +130,63 @@ struct HomeView: View {
             }
 
             ForEach(viewModel.unassignedItems) { item in
-                itemRow(item)
+                itemRow(item, tag: categoryTag(for: item))
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Category Card
+
+    private func categoryCard(_ category: Category) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(category.name)
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.itemCount(for: category))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+
+            let categoryItems = viewModel.items(for: category)
+            if categoryItems.isEmpty {
+                Text("No items here")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(categoryItems) { item in
+                    itemRow(item, tag: locationTag(for: item))
+                }
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Uncategorized Card
+
+    private var uncategorizedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Uncategorized")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.uncategorizedItems.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+
+            ForEach(viewModel.uncategorizedItems) { item in
+                itemRow(item, tag: locationTag(for: item))
             }
         }
         .padding()
@@ -108,7 +195,7 @@ struct HomeView: View {
 
     // MARK: - Item Row
 
-    private func itemRow(_ item: Item) -> some View {
+    private func itemRow(_ item: Item, tag: some View) -> some View {
         Button {
             selectedItem = item
         } label: {
@@ -126,12 +213,43 @@ struct HomeView: View {
                     }
                 }
                 Spacer()
+                tag
                 Image(systemName: "arrow.right.circle")
                     .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Tags
+
+    private func categoryTag(for item: Item) -> some View {
+        Group {
+            if let category = viewModel.category(for: item) {
+                Text(category.name)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
+    }
+
+    private func locationTag(for item: Item) -> some View {
+        Group {
+            if let location = viewModel.location(for: item) {
+                HStack(spacing: 4) {
+                    Text(location.emoji ?? "📍")
+                        .font(.caption)
+                    Text(location.name)
+                        .font(.caption)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
     }
 
     // MARK: - Empty State
