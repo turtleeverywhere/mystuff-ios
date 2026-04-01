@@ -34,21 +34,16 @@ struct ItemsView: View {
             }
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
-                    locations: viewModel.locations,
-                    categories: viewModel.categories,
+                    viewModel: viewModel,
                     onSave: { name, notes, locationId, categoryId in
                         Task { await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId) }
-                    },
-                    onCreateCategory: { name in
-                        Task { await viewModel.addCategory(name: name) }
                     }
                 )
             }
             .sheet(item: $editingItem) { item in
                 ItemFormSheet(
                     item: item,
-                    locations: viewModel.locations,
-                    categories: viewModel.categories,
+                    viewModel: viewModel,
                     onSave: { name, notes, locationId, categoryId in
                         var updated = item
                         updated.name = name
@@ -56,9 +51,6 @@ struct ItemsView: View {
                         updated.locationId = locationId
                         updated.categoryId = categoryId
                         Task { await viewModel.updateItem(updated) }
-                    },
-                    onCreateCategory: { name in
-                        Task { await viewModel.addCategory(name: name) }
                     }
                 )
             }
@@ -147,10 +139,8 @@ struct ItemsView: View {
 
 struct ItemFormSheet: View {
     let item: Item?
-    let locations: [Location]
-    let categories: [Category]
+    @Bindable var viewModel: StuffViewModel
     let onSave: (String, String?, String?, String?) -> Void
-    let onCreateCategory: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -165,16 +155,12 @@ struct ItemFormSheet: View {
 
     init(
         item: Item? = nil,
-        locations: [Location],
-        categories: [Category],
-        onSave: @escaping (String, String?, String?, String?) -> Void,
-        onCreateCategory: @escaping (String) -> Void
+        viewModel: StuffViewModel,
+        onSave: @escaping (String, String?, String?, String?) -> Void
     ) {
         self.item = item
-        self.locations = locations
-        self.categories = categories
+        self.viewModel = viewModel
         self.onSave = onSave
-        self.onCreateCategory = onCreateCategory
         _name = State(initialValue: item?.name ?? "")
         _notes = State(initialValue: item?.notes ?? "")
         _selectedLocationId = State(initialValue: item?.locationId ?? "__unassigned__")
@@ -193,7 +179,7 @@ struct ItemFormSheet: View {
                 Section("Location") {
                     Picker("Location", selection: $selectedLocationId) {
                         Text("Unassigned").tag(unassignedSentinel)
-                        ForEach(locations) { location in
+                        ForEach(viewModel.locations) { location in
                             Label {
                                 Text(location.name)
                             } icon: {
@@ -207,7 +193,7 @@ struct ItemFormSheet: View {
                 Section("Category") {
                     Picker("Category", selection: $selectedCategoryId) {
                         Text("Uncategorized").tag(uncategorizedSentinel)
-                        ForEach(categories) { category in
+                        ForEach(viewModel.categories) { category in
                             Text(category.name).tag(category.id)
                         }
                     }
@@ -238,7 +224,11 @@ struct ItemFormSheet: View {
                 Button("Add") {
                     let trimmed = newCategoryName.trimmingCharacters(in: .whitespaces)
                     if !trimmed.isEmpty {
-                        onCreateCategory(trimmed)
+                        Task {
+                            if let category = await viewModel.addCategory(name: trimmed) {
+                                selectedCategoryId = category.id
+                            }
+                        }
                         newCategoryName = ""
                     }
                 }

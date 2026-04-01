@@ -176,6 +176,7 @@ final class StuffViewModel {
             for i in items.indices where items[i].locationId == location.id {
                 items[i].locationId = nil
                 items[i].updatedAt = .now
+                try await service.updateItem(items[i])
             }
             HapticManager.impact()
         } catch {
@@ -185,14 +186,17 @@ final class StuffViewModel {
 
     // MARK: - Category CRUD
 
-    func addCategory(name: String) async {
+    @discardableResult
+    func addCategory(name: String) async -> Category? {
         let category = Category(name: name)
         do {
             try await service.addCategory(category)
             categories.append(category)
             HapticManager.success()
+            return category
         } catch {
             errorMessage = error.localizedDescription
+            return nil
         }
     }
 
@@ -215,6 +219,7 @@ final class StuffViewModel {
             for i in items.indices where items[i].categoryId == category.id {
                 items[i].categoryId = nil
                 items[i].updatedAt = .now
+                try await service.updateItem(items[i])
             }
             HapticManager.impact()
         } catch {
