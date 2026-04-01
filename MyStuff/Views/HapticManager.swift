@@ -1,5 +1,6 @@
 import UIKit
 
+@MainActor
 enum HapticManager {
 
     static func success() {

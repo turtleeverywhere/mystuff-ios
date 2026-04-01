@@ -15,6 +15,7 @@ final class AuthService {
     var isLoading: Bool = true
     var errorMessage: String?
 
+    @ObservationIgnored
     private var authStateHandle: AuthStateDidChangeListenerHandle?
 
     // MARK: - Lifecycle
@@ -29,9 +30,10 @@ final class AuthService {
         }
     }
 
-    deinit {
+    func removeListener() {
         if let handle = authStateHandle {
             Auth.auth().removeStateDidChangeListener(handle)
+            authStateHandle = nil
         }
     }
 

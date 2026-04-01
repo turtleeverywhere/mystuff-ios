@@ -5,10 +5,11 @@ import GoogleSignIn
 @main
 struct MyStuffApp: App {
 
-    @State private var authService = AuthService()
+    @State private var authService: AuthService
 
     init() {
         FirebaseApp.configure()
+        _authService = State(initialValue: AuthService())
     }
 
     var body: some Scene {

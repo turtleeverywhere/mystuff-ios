@@ -193,5 +193,5 @@ struct ItemFormSheet: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(authService: AuthService())
 }

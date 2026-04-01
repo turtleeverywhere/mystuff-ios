@@ -89,7 +89,7 @@ struct LocationsView: View {
         ContentUnavailableView {
             Label("No Locations Yet", systemImage: "mappin.circle")
         } description: {
-            Text("Add locations like "Living Room", "Garage", or "Car" to start organizing your stuff.")
+            Text("Add locations like \"Living Room\", \"Garage\", or \"Car\" to start organizing your stuff.")
         } actions: {
             Button("Add Location") {
                 showingAddSheet = true
@@ -165,5 +165,5 @@ struct LocationFormSheet: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(authService: AuthService())
 }

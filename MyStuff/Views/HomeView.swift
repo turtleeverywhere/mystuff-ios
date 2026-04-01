@@ -156,7 +156,7 @@ struct MoveItemSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Move "\(item.name)" to…") {
+                Section("Move \"\(item.name)\" to…") {
                     Button {
                         onMove(nil)
                         dismiss()
@@ -192,5 +192,5 @@ struct MoveItemSheet: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(authService: AuthService())
 }
