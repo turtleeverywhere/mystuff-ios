@@ -1,0 +1,35 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserdata
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# Firebase config (contains API keys — do NOT commit)
+GoogleService-Info.plist
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# CocoaPods (not used, but just in case)
+Pods/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Archives
+*.ipa
+*.dSYM.zip
+*.dSYM
