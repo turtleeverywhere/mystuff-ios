@@ -20,6 +20,7 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
     private var userDoc: DocumentReference { db.collection("users").document(uid) }
     private var itemsCollection: CollectionReference { userDoc.collection("items") }
     private var locationsCollection: CollectionReference { userDoc.collection("locations") }
+    private var categoriesCollection: CollectionReference { userDoc.collection("categories") }
 
     // MARK: - Items
 
@@ -57,5 +58,24 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
 
     func deleteLocation(_ location: Location) async throws {
         try await locationsCollection.document(location.id).delete()
+    }
+
+    // MARK: - Categories
+
+    func fetchCategories() async throws -> [Category] {
+        let snapshot = try await categoriesCollection.order(by: "createdAt", descending: true).getDocuments()
+        return try snapshot.documents.map { try $0.data(as: Category.self) }
+    }
+
+    func addCategory(_ category: Category) async throws {
+        try categoriesCollection.document(category.id).setData(from: category)
+    }
+
+    func updateCategory(_ category: Category) async throws {
+        try categoriesCollection.document(category.id).setData(from: category, merge: true)
+    }
+
+    func deleteCategory(_ category: Category) async throws {
+        try await categoriesCollection.document(category.id).delete()
     }
 }
