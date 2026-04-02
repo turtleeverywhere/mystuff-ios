@@ -13,8 +13,12 @@ final class MockDataService: DataService, @unchecked Sendable {
         let office = Location(id: "loc-3", name: "Office", emoji: "🖥️")
         let cellar = Location(id: "loc-4", name: "Cellar", emoji: "📦")
         let car = Location(id: "loc-5", name: "Car", emoji: "🚙")
+        // Child locations
+        let tvCabinet = Location(id: "loc-6", name: "TV Cabinet", emoji: "📺", parentId: "loc-1")
+        let workbench = Location(id: "loc-7", name: "Workbench", emoji: "🔧", parentId: "loc-2")
+        let desk = Location(id: "loc-8", name: "Desk", emoji: "🗂️", parentId: "loc-3")
 
-        self.locations = [livingRoom, garage, office, cellar, car]
+        self.locations = [livingRoom, garage, office, cellar, car, tvCabinet, workbench, desk]
 
         let electronics = Category(id: "cat-1", name: "Electronics")
         let tools = Category(id: "cat-2", name: "Tools")
@@ -24,9 +28,9 @@ final class MockDataService: DataService, @unchecked Sendable {
         self.categories = [electronics, tools, documents, seasonal]
 
         self.items = [
-            Item(id: "item-1", name: "TV Remote", notes: "Samsung remote, silver", locationId: "loc-1", categoryId: "cat-1"),
-            Item(id: "item-2", name: "Drill", notes: "Bosch cordless", locationId: "loc-2", categoryId: "cat-2"),
-            Item(id: "item-3", name: "Passport", notes: "Expires 2028", locationId: "loc-3", categoryId: "cat-3"),
+            Item(id: "item-1", name: "TV Remote", notes: "Samsung remote, silver", locationId: "loc-6", categoryId: "cat-1"),
+            Item(id: "item-2", name: "Drill", notes: "Bosch cordless", locationId: "loc-7", categoryId: "cat-2"),
+            Item(id: "item-3", name: "Passport", notes: "Expires 2028", locationId: "loc-8", categoryId: "cat-3"),
             Item(id: "item-4", name: "Christmas Decorations", notes: "3 boxes", locationId: "loc-4", categoryId: "cat-4"),
             Item(id: "item-5", name: "Umbrella", locationId: "loc-5"),
             Item(id: "item-6", name: "Spare Keys", notes: "Front door + mailbox"),

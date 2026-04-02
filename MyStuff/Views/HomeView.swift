@@ -25,7 +25,7 @@ struct HomeView: View {
             .sheet(item: $selectedItem) { item in
                 MoveItemSheet(
                     item: item,
-                    locations: viewModel.locations,
+                    viewModel: viewModel,
                     onMove: { locationId in
                         Task {
                             await viewModel.moveItem(item, toLocationId: locationId)
@@ -113,11 +113,11 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Location Grouping (existing behavior)
+    // MARK: - Location Grouping
 
     private var locationGrouping: some View {
         Group {
-            ForEach(viewModel.locations) { location in
+            ForEach(viewModel.rootLocations) { location in
                 locationCard(location)
             }
             if !viewModel.unassignedItems.isEmpty {
@@ -149,7 +149,7 @@ struct HomeView: View {
                 Text(location.name)
                     .font(.headline)
                 Spacer()
-                Text("\(viewModel.itemCount(for: location))")
+                Text("\(viewModel.recursiveItemCount(for: location))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -157,20 +157,49 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            let locationItems = viewModel.items(for: location)
-            if locationItems.isEmpty {
+            // Items directly at this root location
+            let directItems = viewModel.items(for: location)
+            if directItems.isEmpty && viewModel.flattenedDescendantItems(for: location).isEmpty {
                 Text("No items here")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(locationItems) { item in
+                ForEach(directItems) { item in
                     itemRow(item, tag: categoryTag(for: item))
+                }
+
+                // Flattened descendant items grouped by sublocation
+                ForEach(viewModel.flattenedDescendantItems(for: location), id: \.sublocation.id) { entry in
+                    sublocationHeader(entry.sublocation, relativeTo: location)
+                    ForEach(entry.items) { item in
+                        itemRow(item, tag: categoryTag(for: item))
+                            .padding(.leading, 8)
+                    }
                 }
             }
         }
         .padding()
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func sublocationHeader(_ sublocation: Location, relativeTo root: Location) -> some View {
+        let path = viewModel.locationPath(for: sublocation)
+        // Build relative path: drop everything up to and including root
+        let relativePath: String
+        if let rootIdx = path.firstIndex(where: { $0.id == root.id }) {
+            relativePath = path.suffix(from: path.index(after: rootIdx)).map(\.name).joined(separator: " > ")
+        } else {
+            relativePath = sublocation.name
+        }
+        return HStack(spacing: 4) {
+            Text(sublocation.emoji ?? "📍")
+                .font(.caption)
+            Text(relativePath)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 4)
     }
 
     // MARK: - Unassigned Location Card
@@ -371,7 +400,7 @@ struct HomeView: View {
 
 struct MoveItemSheet: View {
     let item: Item
-    let locations: [Location]
+    let viewModel: StuffViewModel
     let onMove: (String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -387,18 +416,19 @@ struct MoveItemSheet: View {
                     }
                     .tint(item.locationId == nil ? .accentColor : .primary)
 
-                    ForEach(locations) { location in
+                    ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
                         Button {
-                            onMove(location.id)
+                            onMove(entry.location.id)
                             dismiss()
                         } label: {
                             Label {
-                                Text(location.name)
+                                Text(entry.location.name)
                             } icon: {
-                                Text(location.emoji ?? "📍")
+                                Text(entry.location.emoji ?? "📍")
                             }
                         }
-                        .tint(item.locationId == location.id ? .accentColor : .primary)
+                        .tint(item.locationId == entry.location.id ? .accentColor : .primary)
+                        .padding(.leading, CGFloat(entry.depth) * 20)
                     }
                 }
             }

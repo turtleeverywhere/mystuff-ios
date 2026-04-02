@@ -153,7 +153,7 @@ struct ItemDetailSheet: View {
             HStack(spacing: 8) {
                 if let location = viewModel.location(for: item) {
                     Label {
-                        Text(location.name)
+                        Text(viewModel.displayPath(for: location))
                     } icon: {
                         Text(location.emoji ?? "📍")
                     }

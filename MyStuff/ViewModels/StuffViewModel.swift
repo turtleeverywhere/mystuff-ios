@@ -56,6 +56,92 @@ final class StuffViewModel {
         items.filter { $0.locationId == location.id }.count
     }
 
+    // MARK: - Location Tree
+
+    var rootLocations: [Location] {
+        locations.filter { $0.parentId == nil }
+    }
+
+    func childLocations(for location: Location) -> [Location] {
+        locations.filter { $0.parentId == location.id }
+    }
+
+    func allDescendantIds(of locationId: String) -> Set<String> {
+        var result = Set<String>()
+        var queue = locations.filter { $0.parentId == locationId }
+        while !queue.isEmpty {
+            let loc = queue.removeFirst()
+            result.insert(loc.id)
+            queue.append(contentsOf: locations.filter { $0.parentId == loc.id })
+        }
+        return result
+    }
+
+    func recursiveItemCount(for location: Location) -> Int {
+        let ids = allDescendantIds(of: location.id).union([location.id])
+        return items.filter { ids.contains($0.locationId ?? "") }.count
+    }
+
+    func locationPath(for location: Location) -> [Location] {
+        var path = [location]
+        var current = location
+        while let pid = current.parentId, let parent = locations.first(where: { $0.id == pid }) {
+            path.insert(parent, at: 0)
+            current = parent
+        }
+        return path
+    }
+
+    func displayPath(for location: Location) -> String {
+        locationPath(for: location).map(\.name).joined(separator: " > ")
+    }
+
+    func rootLocation(for location: Location) -> Location {
+        locationPath(for: location).first ?? location
+    }
+
+    /// DFS flattened tree with depth for pickers
+    func flattenedLocationTree(excluding excludeId: String? = nil) -> [(location: Location, depth: Int)] {
+        let excluded: Set<String>
+        if let excludeId {
+            excluded = allDescendantIds(of: excludeId).union([excludeId])
+        } else {
+            excluded = []
+        }
+
+        var result: [(Location, Int)] = []
+        func walk(_ parentId: String?, depth: Int) {
+            let children = locations
+                .filter { $0.parentId == parentId && !excluded.contains($0.id) }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            for child in children {
+                result.append((child, depth))
+                walk(child.id, depth: depth + 1)
+            }
+        }
+        walk(nil, depth: 0)
+        return result
+    }
+
+    /// All descendants flattened under a location, grouped by sublocation
+    func flattenedDescendantItems(for location: Location) -> [(sublocation: Location, items: [Item])] {
+        var result: [(Location, [Item])] = []
+        func walk(_ loc: Location) {
+            let locItems = items(for: loc)
+            if !locItems.isEmpty {
+                result.append((loc, locItems))
+            }
+            for child in childLocations(for: loc).sorted(by: { $0.name < $1.name }) {
+                walk(child)
+            }
+        }
+        // Collect children recursively (skip root itself — caller handles root items)
+        for child in childLocations(for: location).sorted(by: { $0.name < $1.name }) {
+            walk(child)
+        }
+        return result
+    }
+
     // MARK: - Category Computed
 
     var uncategorizedItems: [Item] {
@@ -212,8 +298,8 @@ final class StuffViewModel {
 
     // MARK: - Location CRUD
 
-    func addLocation(name: String, emoji: String?) async {
-        let location = Location(name: name, emoji: emoji)
+    func addLocation(name: String, emoji: String?, parentId: String? = nil) async {
+        let location = Location(name: name, emoji: emoji, parentId: parentId)
         do {
             try await service.addLocation(location)
             locations.append(location)
@@ -237,6 +323,11 @@ final class StuffViewModel {
 
     func deleteLocation(_ location: Location) async {
         do {
+            // Promote children to deleted location's parent
+            for i in locations.indices where locations[i].parentId == location.id {
+                locations[i].parentId = location.parentId
+                try await service.updateLocation(locations[i])
+            }
             try await service.deleteLocation(location)
             locations.removeAll { $0.id == location.id }
             // Unassign items that were at this location

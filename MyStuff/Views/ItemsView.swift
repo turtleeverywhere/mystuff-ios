@@ -321,13 +321,9 @@ struct ItemFormSheet: View {
                 Section("Location") {
                     Picker("Location", selection: $selectedLocationId) {
                         Text("Unassigned").tag(unassignedSentinel)
-                        ForEach(viewModel.locations) { location in
-                            Label {
-                                Text(location.name)
-                            } icon: {
-                                Text(location.emoji ?? "📍")
-                            }
-                            .tag(location.id)
+                        ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
+                                .tag(entry.location.id)
                         }
                     }
                 }
