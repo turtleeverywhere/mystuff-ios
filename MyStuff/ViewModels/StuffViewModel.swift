@@ -26,6 +26,8 @@ final class StuffViewModel {
     /// Swap this single line to switch between Mock and Firebase:
     // private let service: DataService = MockDataService()
     private let service: DataService = FirebaseDataService()
+    // private let storageService: StorageService = MockStorageService()
+    private let storageService: StorageService = FirebaseStorageService()
 
     // MARK: - Computed
 
@@ -120,8 +122,50 @@ final class StuffViewModel {
 
     func deleteItem(_ item: Item) async {
         do {
+            if item.photoURL != nil {
+                try? await storageService.deletePhoto(url: item.photoURL!)
+            }
             try await service.deleteItem(item)
             items.removeAll { $0.id == item.id }
+            HapticManager.impact()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Photo
+
+    func setPhoto(for item: Item, imageData: Data) async {
+        guard let compressed = ImageHelper.compress(imageData) else { return }
+        do {
+            if let oldURL = item.photoURL {
+                try? await storageService.deletePhoto(url: oldURL)
+            }
+            let url = try await storageService.uploadPhoto(itemId: item.id, imageData: compressed)
+            var updated = item
+            updated.photoURL = url
+            updated.updatedAt = .now
+            try await service.updateItem(updated)
+            if let index = items.firstIndex(where: { $0.id == updated.id }) {
+                items[index] = updated
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deletePhoto(for item: Item) async {
+        guard let url = item.photoURL else { return }
+        do {
+            try? await storageService.deletePhoto(url: url)
+            var updated = item
+            updated.photoURL = nil
+            updated.updatedAt = .now
+            try await service.updateItem(updated)
+            if let index = items.firstIndex(where: { $0.id == updated.id }) {
+                items[index] = updated
+            }
             HapticManager.impact()
         } catch {
             errorMessage = error.localizedDescription

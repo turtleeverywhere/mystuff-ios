@@ -3,6 +3,8 @@ import SwiftUI
 struct HomeView: View {
     @Bindable var viewModel: StuffViewModel
     @State private var selectedItem: Item?
+    @State private var detailItem: Item?
+    @State private var itemToPromptPhoto: Item?
 
     var body: some View {
         NavigationStack {
@@ -19,10 +21,34 @@ struct HomeView: View {
                     item: item,
                     locations: viewModel.locations,
                     onMove: { locationId in
-                        Task { await viewModel.moveItem(item, toLocationId: locationId) }
+                        Task {
+                            await viewModel.moveItem(item, toLocationId: locationId)
+                            if item.photoURL != nil {
+                                itemToPromptPhoto = item
+                            }
+                        }
                     }
                 )
                 .presentationDetents([.medium])
+            }
+            .sheet(item: $detailItem) { item in
+                ItemDetailSheet(item: item, viewModel: viewModel)
+            }
+            .confirmationDialog(
+                "Update photo for new location?",
+                isPresented: Binding(
+                    get: { itemToPromptPhoto != nil },
+                    set: { if !$0 { itemToPromptPhoto = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Update Photo") {
+                    detailItem = itemToPromptPhoto
+                    itemToPromptPhoto = nil
+                }
+                Button("Later", role: .cancel) {
+                    itemToPromptPhoto = nil
+                }
             }
         }
     }
@@ -196,30 +222,60 @@ struct HomeView: View {
     // MARK: - Item Row
 
     private func itemRow(_ item: Item, tag: some View) -> some View {
-        Button {
-            selectedItem = item
-        } label: {
-            HStack {
-                Image(systemName: "shippingbox")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading) {
-                    Text(item.name)
-                        .font(.subheadline)
-                    if let notes = item.notes {
-                        Text(notes)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+        HStack {
+            Button {
+                detailItem = item
+            } label: {
+                HStack {
+                    itemThumbnail(item)
+                    VStack(alignment: .leading) {
+                        Text(item.name)
+                            .font(.subheadline)
+                        if let notes = item.notes {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-                Spacer()
-                tag
-                Image(systemName: "arrow.right.circle")
-                    .foregroundStyle(.tertiary)
             }
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
+
+            Spacer()
+            tag
+
+            Button {
+                selectedItem = item
+            } label: {
+                Image(systemName: "arrow.right.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func itemThumbnail(_ item: Item) -> some View {
+        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                default:
+                    Image(systemName: "shippingbox")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Tags
