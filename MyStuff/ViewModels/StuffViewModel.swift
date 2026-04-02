@@ -122,8 +122,11 @@ final class StuffViewModel {
 
     func deleteItem(_ item: Item) async {
         do {
-            if item.photoURL != nil {
-                try? await storageService.deletePhoto(url: item.photoURL!)
+            if let url = item.photoURL {
+                try? await storageService.deletePhoto(url: url)
+            }
+            if let url = item.itemPhotoURL {
+                try? await storageService.deletePhoto(url: url)
             }
             try await service.deleteItem(item)
             items.removeAll { $0.id == item.id }
@@ -141,9 +144,29 @@ final class StuffViewModel {
             if let oldURL = item.photoURL {
                 try? await storageService.deletePhoto(url: oldURL)
             }
-            let url = try await storageService.uploadPhoto(itemId: item.id, imageData: compressed)
+            let url = try await storageService.uploadPhoto(itemId: item.id, imageData: compressed, filename: "photo")
             var updated = item
             updated.photoURL = url
+            updated.updatedAt = .now
+            try await service.updateItem(updated)
+            if let index = items.firstIndex(where: { $0.id == updated.id }) {
+                items[index] = updated
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setItemPhoto(for item: Item, imageData: Data) async {
+        guard let compressed = ImageHelper.compress(imageData) else { return }
+        do {
+            if let oldURL = item.itemPhotoURL {
+                try? await storageService.deletePhoto(url: oldURL)
+            }
+            let url = try await storageService.uploadPhoto(itemId: item.id, imageData: compressed, filename: "item_photo")
+            var updated = item
+            updated.itemPhotoURL = url
             updated.updatedAt = .now
             try await service.updateItem(updated)
             if let index = items.firstIndex(where: { $0.id == updated.id }) {

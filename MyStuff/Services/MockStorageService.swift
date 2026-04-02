@@ -2,7 +2,7 @@ import Foundation
 
 final class MockStorageService: StorageService, @unchecked Sendable {
 
-    func uploadPhoto(itemId: String, imageData: Data) async throws -> String {
+    func uploadPhoto(itemId: String, imageData: Data, filename: String) async throws -> String {
         "mock://photo-\(UUID().uuidString)"
     }
 

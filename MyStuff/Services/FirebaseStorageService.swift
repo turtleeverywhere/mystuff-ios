@@ -12,8 +12,8 @@ final class FirebaseStorageService: StorageService, @unchecked Sendable {
         Auth.auth().currentUser!.uid
     }
 
-    func uploadPhoto(itemId: String, imageData: Data) async throws -> String {
-        let ref = storageRef.child("users/\(uid)/items/\(itemId)/photo.jpg")
+    func uploadPhoto(itemId: String, imageData: Data, filename: String) async throws -> String {
+        let ref = storageRef.child("users/\(uid)/items/\(itemId)/\(filename).jpg")
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
         _ = try await ref.putDataAsync(imageData, metadata: metadata)

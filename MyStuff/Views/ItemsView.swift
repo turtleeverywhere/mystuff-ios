@@ -1,9 +1,16 @@
+import PhotosUI
 import SwiftUI
 
 struct ItemsView: View {
     @Bindable var viewModel: StuffViewModel
     @State private var showingAddSheet = false
     @State private var editingItem: Item?
+    @State private var photoSourceItem: Item?
+    @State private var showPhotoSource = false
+    @State private var previewItem: Item?
+    @State private var showCamera = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var isUploading = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +61,40 @@ struct ItemsView: View {
                     }
                 )
             }
+            .sheet(item: $previewItem) { item in
+                ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
+                    .presentationDetents([.medium, .large])
+            }
+            .confirmationDialog("Item Photo", isPresented: $showPhotoSource) {
+                Button("Take Photo") { showCamera = true }
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Text("Choose from Library")
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { data in
+                    guard let item = photoSourceItem else { return }
+                    Task {
+                        isUploading = true
+                        await viewModel.setItemPhoto(for: item, imageData: data)
+                        isUploading = false
+                        photoSourceItem = nil
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: selectedPhoto) {
+                guard let selectedPhoto, let item = photoSourceItem else { return }
+                Task {
+                    isUploading = true
+                    if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
+                        await viewModel.setItemPhoto(for: item, imageData: data)
+                    }
+                    isUploading = false
+                    self.selectedPhoto = nil
+                    photoSourceItem = nil
+                }
+            }
         }
     }
 
@@ -62,28 +103,31 @@ struct ItemsView: View {
     private var itemsList: some View {
         List {
             ForEach(viewModel.filteredItems) { item in
-                Button {
-                    editingItem = item
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.name)
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                            if let notes = item.notes, !notes.isEmpty {
-                                Text(notes)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                HStack(spacing: 12) {
+                    itemPhotoCircle(item)
+                    Button {
+                        editingItem = item
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.name)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                if let notes = item.notes, !notes.isEmpty {
+                                    Text(notes)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
+                            Spacer()
+                            categoryBadge(for: item)
+                            locationBadge(for: item)
                         }
-                        Spacer()
-                        categoryBadge(for: item)
-                        locationBadge(for: item)
                     }
-                    .padding(.vertical, 2)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 2)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         Task { await viewModel.deleteItem(item) }
@@ -93,6 +137,46 @@ struct ItemsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Item Photo Circle
+
+    @ViewBuilder
+    private func itemPhotoCircle(_ item: Item) -> some View {
+        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+        if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+                default:
+                    photoPlaceholderCircle
+                }
+            }
+            .onTapGesture {
+                previewItem = liveItem
+            }
+            .onLongPressGesture {
+                photoSourceItem = liveItem
+                showPhotoSource = true
+            }
+        } else {
+            photoPlaceholderCircle
+                .onTapGesture {
+                    photoSourceItem = item
+                    showPhotoSource = true
+                }
+        }
+    }
+
+    private var photoPlaceholderCircle: some View {
+        Image(systemName: "photo.circle.fill")
+            .font(.system(size: 34))
+            .foregroundStyle(.tertiary)
     }
 
     // MARK: - Location Badge
@@ -146,6 +230,49 @@ struct ItemsView: View {
                 showingAddSheet = true
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+// MARK: - Item Photo Preview Sheet
+
+struct ItemPhotoPreviewSheet: View {
+    let item: Item
+    @Bindable var viewModel: StuffViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+        NavigationStack {
+            Group {
+                if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .padding()
+                        case .failure:
+                            ContentUnavailableView("Failed to load", systemImage: "exclamationmark.triangle")
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            ProgressView()
+                        }
+                    }
+                } else {
+                    ContentUnavailableView("No photo", systemImage: "photo")
+                }
+            }
+            .navigationTitle(item.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }

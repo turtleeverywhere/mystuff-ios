@@ -7,6 +7,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var locationId: String?
     var categoryId: String?
     var photoURL: String?
+    var itemPhotoURL: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -17,6 +18,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         locationId: String? = nil,
         categoryId: String? = nil,
         photoURL: String? = nil,
+        itemPhotoURL: String? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -26,6 +28,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.locationId = locationId
         self.categoryId = categoryId
         self.photoURL = photoURL
+        self.itemPhotoURL = itemPhotoURL
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

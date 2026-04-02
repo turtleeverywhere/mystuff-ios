@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct HomeView: View {
@@ -5,6 +6,11 @@ struct HomeView: View {
     @State private var selectedItem: Item?
     @State private var detailItem: Item?
     @State private var itemToPromptPhoto: Item?
+    @State private var previewItem: Item?
+    @State private var photoSourceItem: Item?
+    @State private var showPhotoSource = false
+    @State private var showCamera = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
         NavigationStack {
@@ -48,6 +54,36 @@ struct HomeView: View {
                 }
                 Button("Later", role: .cancel) {
                     itemToPromptPhoto = nil
+                }
+            }
+            .sheet(item: $previewItem) { item in
+                ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
+                    .presentationDetents([.medium, .large])
+            }
+            .confirmationDialog("Item Photo", isPresented: $showPhotoSource) {
+                Button("Take Photo") { showCamera = true }
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Text("Choose from Library")
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { data in
+                    guard let item = photoSourceItem else { return }
+                    Task {
+                        await viewModel.setItemPhoto(for: item, imageData: data)
+                        photoSourceItem = nil
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: selectedPhoto) {
+                guard let selectedPhoto, let item = photoSourceItem else { return }
+                Task {
+                    if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
+                        await viewModel.setItemPhoto(for: item, imageData: data)
+                    }
+                    self.selectedPhoto = nil
+                    photoSourceItem = nil
                 }
             }
         }
@@ -223,20 +259,19 @@ struct HomeView: View {
 
     private func itemRow(_ item: Item, tag: some View) -> some View {
         HStack {
+            itemThumbnail(item)
+
             Button {
                 detailItem = item
             } label: {
-                HStack {
-                    itemThumbnail(item)
-                    VStack(alignment: .leading) {
-                        Text(item.name)
-                            .font(.subheadline)
-                        if let notes = item.notes {
-                            Text(notes)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                VStack(alignment: .leading) {
+                    Text(item.name)
+                        .font(.subheadline)
+                    if let notes = item.notes {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
             }
@@ -258,7 +293,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private func itemThumbnail(_ item: Item) -> some View {
-        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
+        if let photoURL = item.itemPhotoURL, let url = URL(string: photoURL) {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
@@ -266,15 +301,28 @@ struct HomeView: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 28, height: 28)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(Circle())
                 default:
-                    Image(systemName: "shippingbox")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "photo.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.tertiary)
                 }
             }
+            .onTapGesture {
+                previewItem = item
+            }
+            .onLongPressGesture {
+                photoSourceItem = item
+                showPhotoSource = true
+            }
         } else {
-            Image(systemName: "shippingbox")
-                .foregroundStyle(.secondary)
+            Image(systemName: "photo.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.tertiary)
+                .onTapGesture {
+                    photoSourceItem = item
+                    showPhotoSource = true
+                }
         }
     }
 
