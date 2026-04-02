@@ -78,6 +78,7 @@ struct ItemsView: View {
                             }
                         }
                         Spacer()
+                        categoryBadge(for: item)
                         locationBadge(for: item)
                     }
                     .padding(.vertical, 2)
@@ -112,6 +113,20 @@ struct ItemsView: View {
                 Text("Unassigned")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
+    }
+
+    // MARK: - Category Badge
+
+    private func categoryBadge(for item: Item) -> some View {
+        Group {
+            if let category = viewModel.category(for: item) {
+                Text(category.name)
+                    .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(.ultraThinMaterial, in: Capsule())
