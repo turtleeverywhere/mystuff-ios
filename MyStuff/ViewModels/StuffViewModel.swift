@@ -182,7 +182,7 @@ final class StuffViewModel {
     // MARK: - Item CRUD
 
     func addItem(name: String, notes: String?, locationId: String?, categoryId: String?) async {
-        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
+        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil)
         do {
             try await service.addItem(item)
             items.append(item)
@@ -284,6 +284,7 @@ final class StuffViewModel {
     func moveItem(_ item: Item, toLocationId: String?) async {
         var updated = item
         updated.locationId = toLocationId
+        updated.locationChangedAt = .now
         updated.updatedAt = .now
         do {
             try await service.updateItem(updated)

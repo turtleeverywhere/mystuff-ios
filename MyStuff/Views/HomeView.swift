@@ -11,6 +11,41 @@ struct HomeView: View {
     @State private var showPhotoSource = false
     @State private var showCamera = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var homeSearchText = ""
+    @State private var filterCategoryIds: Set<String> = []
+    @State private var filterLocationIds: Set<String> = []
+    @State private var showFilters = false
+
+    /// Items matching current search + filters
+    private var homeFilteredItems: Set<String> {
+        var result = viewModel.items
+        if !homeSearchText.isEmpty {
+            result = result.filter {
+                $0.name.localizedCaseInsensitiveContains(homeSearchText)
+                || ($0.notes?.localizedCaseInsensitiveContains(homeSearchText) ?? false)
+            }
+        }
+        if !filterCategoryIds.isEmpty {
+            result = result.filter { filterCategoryIds.contains($0.categoryId ?? "") }
+        }
+        if !filterLocationIds.isEmpty {
+            // Include items at selected locations OR any of their descendants
+            let allIds = filterLocationIds.reduce(into: filterLocationIds) { acc, id in
+                acc.formUnion(viewModel.allDescendantIds(of: id))
+            }
+            result = result.filter { allIds.contains($0.locationId ?? "") }
+        }
+        return Set(result.map(\.id))
+    }
+
+    private var isFiltering: Bool {
+        !homeSearchText.isEmpty || !filterCategoryIds.isEmpty || !filterLocationIds.isEmpty
+    }
+
+    private func filtered(_ items: [Item]) -> [Item] {
+        guard isFiltering else { return items }
+        return items.filter { homeFilteredItems.contains($0.id) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,6 +57,7 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("My Stuff")
+            .searchable(text: $homeSearchText, prompt: "Search items")
             .sheet(item: $selectedItem) { item in
                 MoveItemSheet(
                     item: item,
@@ -102,6 +138,8 @@ struct HomeView: View {
                 }
                 .pickerStyle(.segmented)
 
+                filterBar
+
                 switch viewModel.selectedGrouping {
                 case .location:
                     locationGrouping
@@ -113,17 +151,139 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Filter Bar
+
+    private var filterBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation { showFilters.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                    Text("Filters")
+                        .font(.subheadline)
+                    if isFiltering {
+                        let count = (filterCategoryIds.isEmpty ? 0 : 1) + (filterLocationIds.isEmpty ? 0 : 1)
+                        if count > 0 {
+                            Text("\(count)")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: showFilters ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            if showFilters {
+                // Category filters
+                if !viewModel.categories.isEmpty {
+                    Text("Categories")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(viewModel.categories) { category in
+                                filterChip(
+                                    label: category.name,
+                                    isSelected: filterCategoryIds.contains(category.id)
+                                ) {
+                                    if filterCategoryIds.contains(category.id) {
+                                        filterCategoryIds.remove(category.id)
+                                    } else {
+                                        filterCategoryIds.insert(category.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Location filters
+                if !viewModel.locations.isEmpty {
+                    Text("Locations")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+                                filterChip(
+                                    label: String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name,
+                                    isSelected: filterLocationIds.contains(entry.location.id)
+                                ) {
+                                    if filterLocationIds.contains(entry.location.id) {
+                                        filterLocationIds.remove(entry.location.id)
+                                    } else {
+                                        filterLocationIds.insert(entry.location.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if isFiltering {
+                    Button("Clear All") {
+                        filterCategoryIds.removeAll()
+                        filterLocationIds.removeAll()
+                        homeSearchText = ""
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    private func filterChip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor.opacity(0.2) : .clear, in: Capsule())
+                .overlay(Capsule().stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Location Grouping
 
     private var locationGrouping: some View {
         Group {
             ForEach(viewModel.rootLocations) { location in
-                locationCard(location)
+                let card = locationCardContent(location)
+                if card.totalCount > 0 || !isFiltering {
+                    locationCard(location, directItems: card.directItems, descendantEntries: card.descendantEntries, totalCount: card.totalCount)
+                }
             }
-            if !viewModel.unassignedItems.isEmpty {
-                unassignedLocationCard
+            let unassigned = filtered(viewModel.unassignedItems)
+            if !unassigned.isEmpty {
+                unassignedLocationCard(items: unassigned)
             }
         }
+    }
+
+    private struct LocationCardContent {
+        let directItems: [Item]
+        let descendantEntries: [(sublocation: Location, items: [Item])]
+        var totalCount: Int {
+            directItems.count + descendantEntries.reduce(0) { $0 + $1.items.count }
+        }
+    }
+
+    private func locationCardContent(_ location: Location) -> LocationCardContent {
+        let direct = filtered(viewModel.items(for: location))
+        let descendants = viewModel.flattenedDescendantItems(for: location).compactMap { entry -> (sublocation: Location, items: [Item])? in
+            let items = filtered(entry.items)
+            return items.isEmpty ? nil : (entry.sublocation, items)
+        }
+        return LocationCardContent(directItems: direct, descendantEntries: descendants)
     }
 
     // MARK: - Category Grouping
@@ -131,17 +291,21 @@ struct HomeView: View {
     private var categoryGrouping: some View {
         Group {
             ForEach(viewModel.categories) { category in
-                categoryCard(category)
+                let items = filtered(viewModel.items(for: category))
+                if !items.isEmpty || !isFiltering {
+                    categoryCard(category, items: items)
+                }
             }
-            if !viewModel.uncategorizedItems.isEmpty {
-                uncategorizedCard
+            let uncategorized = filtered(viewModel.uncategorizedItems)
+            if !uncategorized.isEmpty {
+                uncategorizedCard(items: uncategorized)
             }
         }
     }
 
     // MARK: - Location Card
 
-    private func locationCard(_ location: Location) -> some View {
+    private func locationCard(_ location: Location, directItems: [Item], descendantEntries: [(sublocation: Location, items: [Item])], totalCount: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(location.emoji ?? "📍")
@@ -149,7 +313,7 @@ struct HomeView: View {
                 Text(location.name)
                     .font(.headline)
                 Spacer()
-                Text("\(viewModel.recursiveItemCount(for: location))")
+                Text("\(totalCount)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -157,9 +321,7 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            // Items directly at this root location
-            let directItems = viewModel.items(for: location)
-            if directItems.isEmpty && viewModel.flattenedDescendantItems(for: location).isEmpty {
+            if directItems.isEmpty && descendantEntries.isEmpty {
                 Text("No items here")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
@@ -169,8 +331,7 @@ struct HomeView: View {
                     itemRow(item, tag: categoryTag(for: item))
                 }
 
-                // Flattened descendant items grouped by sublocation
-                ForEach(viewModel.flattenedDescendantItems(for: location), id: \.sublocation.id) { entry in
+                ForEach(descendantEntries, id: \.sublocation.id) { entry in
                     sublocationHeader(entry.sublocation, relativeTo: location)
                     ForEach(entry.items) { item in
                         itemRow(item, tag: categoryTag(for: item))
@@ -204,7 +365,7 @@ struct HomeView: View {
 
     // MARK: - Unassigned Location Card
 
-    private var unassignedLocationCard: some View {
+    private func unassignedLocationCard(items: [Item]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("❓")
@@ -212,7 +373,7 @@ struct HomeView: View {
                 Text("Unassigned")
                     .font(.headline)
                 Spacer()
-                Text("\(viewModel.unassignedItems.count)")
+                Text("\(items.count)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -220,7 +381,7 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            ForEach(viewModel.unassignedItems) { item in
+            ForEach(items) { item in
                 itemRow(item, tag: categoryTag(for: item))
             }
         }
@@ -230,13 +391,13 @@ struct HomeView: View {
 
     // MARK: - Category Card
 
-    private func categoryCard(_ category: Category) -> some View {
+    private func categoryCard(_ category: Category, items: [Item]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(category.name)
                     .font(.headline)
                 Spacer()
-                Text("\(viewModel.itemCount(for: category))")
+                Text("\(items.count)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -244,14 +405,13 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            let categoryItems = viewModel.items(for: category)
-            if categoryItems.isEmpty {
+            if items.isEmpty {
                 Text("No items here")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(categoryItems) { item in
+                ForEach(items) { item in
                     itemRow(item, tag: locationTag(for: item))
                 }
             }
@@ -262,13 +422,13 @@ struct HomeView: View {
 
     // MARK: - Uncategorized Card
 
-    private var uncategorizedCard: some View {
+    private func uncategorizedCard(items: [Item]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Uncategorized")
                     .font(.headline)
                 Spacer()
-                Text("\(viewModel.uncategorizedItems.count)")
+                Text("\(items.count)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
@@ -276,7 +436,7 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            ForEach(viewModel.uncategorizedItems) { item in
+            ForEach(items) { item in
                 itemRow(item, tag: locationTag(for: item))
             }
         }
@@ -301,6 +461,11 @@ struct HomeView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                    }
+                    if let changedAt = item.locationChangedAt {
+                        Text("Stored \(changedAt, format: .relative(presentation: .named))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
