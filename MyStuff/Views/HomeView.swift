@@ -10,6 +10,7 @@ struct HomeView: View {
     @State private var photoSourceItem: Item?
     @State private var showPhotoSource = false
     @State private var showCamera = false
+    @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var homeSearchText = ""
     @State private var filterCategoryIds: Set<String> = []
@@ -93,20 +94,21 @@ struct HomeView: View {
                 }
             }
             .sheet(item: $previewItem) { item in
-                ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
+                LocationPhotoPreviewSheet(item: item, viewModel: viewModel)
                     .presentationDetents([.medium, .large])
             }
-            .confirmationDialog("Item Photo", isPresented: $showPhotoSource) {
-                Button("Take Photo") { showCamera = true }
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Text("Choose from Library")
-                }
+            .sheet(isPresented: $showPhotoSource) {
+                PhotoSourceSheet(
+                    onCamera: { showCamera = true },
+                    onLibrary: { showPhotoPicker = true }
+                )
             }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { data in
                     guard let item = photoSourceItem else { return }
                     Task {
-                        await viewModel.setItemPhoto(for: item, imageData: data)
+                        await viewModel.setPhoto(for: item, imageData: data)
                         photoSourceItem = nil
                     }
                 }
@@ -116,7 +118,7 @@ struct HomeView: View {
                 guard let selectedPhoto, let item = photoSourceItem else { return }
                 Task {
                     if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
-                        await viewModel.setItemPhoto(for: item, imageData: data)
+                        await viewModel.setPhoto(for: item, imageData: data)
                     }
                     self.selectedPhoto = nil
                     photoSourceItem = nil
@@ -487,20 +489,17 @@ struct HomeView: View {
 
     @ViewBuilder
     private func itemThumbnail(_ item: Item) -> some View {
-        if let photoURL = item.itemPhotoURL, let url = URL(string: photoURL) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 28, height: 28)
-                        .clipShape(Circle())
-                default:
-                    Image(systemName: "photo.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.tertiary)
-                }
+        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
+            CachedAsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+            } placeholder: {
+                Image(systemName: "photo.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.tertiary)
             }
             .onTapGesture {
                 previewItem = item
@@ -602,6 +601,42 @@ struct MoveItemSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Location Photo Preview Sheet
+
+struct LocationPhotoPreviewSheet: View {
+    let item: Item
+    @Bindable var viewModel: StuffViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+        NavigationStack {
+            Group {
+                if let photoURL = liveItem.photoURL, let url = URL(string: photoURL) {
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .padding()
+                    } placeholder: {
+                        ProgressView()
+                    }
+                } else {
+                    ContentUnavailableView("No photo", systemImage: "photo")
+                }
+            }
+            .navigationTitle(item.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }

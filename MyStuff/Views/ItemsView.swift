@@ -9,6 +9,7 @@ struct ItemsView: View {
     @State private var showPhotoSource = false
     @State private var previewItem: Item?
     @State private var showCamera = false
+    @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isUploading = false
 
@@ -42,8 +43,13 @@ struct ItemsView: View {
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId in
-                        Task { await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId) }
+                    onSave: { name, notes, locationId, categoryId, photoData in
+                        Task {
+                            await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
+                            if let photoData, let newItem = viewModel.items.last(where: { $0.name == name }) {
+                                await viewModel.setItemPhoto(for: newItem, imageData: photoData)
+                            }
+                        }
                     }
                 )
             }
@@ -51,13 +57,18 @@ struct ItemsView: View {
                 ItemFormSheet(
                     item: item,
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId in
+                    onSave: { name, notes, locationId, categoryId, photoData in
                         var updated = item
                         updated.name = name
                         updated.notes = notes
                         updated.locationId = locationId
                         updated.categoryId = categoryId
-                        Task { await viewModel.updateItem(updated) }
+                        Task {
+                            await viewModel.updateItem(updated)
+                            if let photoData {
+                                await viewModel.setItemPhoto(for: updated, imageData: photoData)
+                            }
+                        }
                     }
                 )
             }
@@ -65,12 +76,13 @@ struct ItemsView: View {
                 ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
                     .presentationDetents([.medium, .large])
             }
-            .confirmationDialog("Item Photo", isPresented: $showPhotoSource) {
-                Button("Take Photo") { showCamera = true }
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Text("Choose from Library")
-                }
+            .sheet(isPresented: $showPhotoSource) {
+                PhotoSourceSheet(
+                    onCamera: { showCamera = true },
+                    onLibrary: { showPhotoPicker = true }
+                )
             }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { data in
                     guard let item = photoSourceItem else { return }
@@ -145,17 +157,14 @@ struct ItemsView: View {
     private func itemPhotoCircle(_ item: Item) -> some View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
         if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 40, height: 40)
-                        .clipShape(Circle())
-                default:
-                    photoPlaceholderCircle
-                }
+            CachedAsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+            } placeholder: {
+                photoPlaceholderCircle
             }
             .onTapGesture {
                 previewItem = liveItem
@@ -246,21 +255,14 @@ struct ItemPhotoPreviewSheet: View {
         NavigationStack {
             Group {
                 if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .padding()
-                        case .failure:
-                            ContentUnavailableView("Failed to load", systemImage: "exclamationmark.triangle")
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            ProgressView()
-                        }
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .padding()
+                    } placeholder: {
+                        ProgressView()
                     }
                 } else {
                     ContentUnavailableView("No photo", systemImage: "photo")
@@ -282,7 +284,7 @@ struct ItemPhotoPreviewSheet: View {
 struct ItemFormSheet: View {
     let item: Item?
     @Bindable var viewModel: StuffViewModel
-    let onSave: (String, String?, String?, String?) -> Void
+    let onSave: (String, String?, String?, String?, Data?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -291,6 +293,11 @@ struct ItemFormSheet: View {
     @State private var selectedCategoryId: String
     @State private var showingNewCategory = false
     @State private var newCategoryName = ""
+    @State private var photoData: Data?
+    @State private var showPhotoSource = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private let unassignedSentinel = "__unassigned__"
     private let uncategorizedSentinel = "__uncategorized__"
@@ -298,7 +305,7 @@ struct ItemFormSheet: View {
     init(
         item: Item? = nil,
         viewModel: StuffViewModel,
-        onSave: @escaping (String, String?, String?, String?) -> Void
+        onSave: @escaping (String, String?, String?, String?, Data?) -> Void
     ) {
         self.item = item
         self.viewModel = viewModel
@@ -316,6 +323,49 @@ struct ItemFormSheet: View {
                     TextField("Item name", text: $name)
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(3...6)
+                }
+
+                Section("Item Photo") {
+                    if let photoData, let uiImage = UIImage(data: photoData) {
+                        HStack {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                            Spacer()
+
+                            Button(role: .destructive) {
+                                self.photoData = nil
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                        }
+                    } else if let existingURL = item?.itemPhotoURL, !existingURL.isEmpty {
+                        HStack {
+                            CachedAsyncImage(url: URL(string: existingURL)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            } placeholder: {
+                                ProgressView()
+                                    .frame(width: 80, height: 80)
+                            }
+                            Spacer()
+                            Text("Current photo")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button {
+                        showPhotoSource = true
+                    } label: {
+                        Label(photoData != nil || item?.itemPhotoURL != nil ? "Change Photo" : "Add Photo", systemImage: "camera")
+                    }
                 }
 
                 Section("Location") {
@@ -351,7 +401,7 @@ struct ItemFormSheet: View {
                     Button("Save") {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
                         let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
-                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId)
+                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -372,6 +422,28 @@ struct ItemFormSheet: View {
                 }
                 Button("Cancel", role: .cancel) {
                     newCategoryName = ""
+                }
+            }
+            .sheet(isPresented: $showPhotoSource) {
+                PhotoSourceSheet(
+                    onCamera: { showCamera = true },
+                    onLibrary: { showPhotoPicker = true }
+                )
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { data in
+                    photoData = data
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: selectedPhoto) {
+                guard let selectedPhoto else { return }
+                Task {
+                    if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
+                        photoData = data
+                    }
+                    self.selectedPhoto = nil
                 }
             }
         }

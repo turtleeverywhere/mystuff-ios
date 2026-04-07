@@ -10,6 +10,7 @@ struct ItemDetailSheet: View {
     @State private var showDeleteConfirmation = false
     @State private var showPhotoSource = false
     @State private var showCamera = false
+    @State private var showPhotoPicker = false
 
     var body: some View {
         NavigationStack {
@@ -44,12 +45,13 @@ struct ItemDetailSheet: View {
                 Task { await viewModel.deletePhoto(for: item) }
             }
         }
-        .confirmationDialog("Add Photo", isPresented: $showPhotoSource) {
-            Button("Take Photo") { showCamera = true }
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Text("Choose from Library")
-            }
+        .sheet(isPresented: $showPhotoSource) {
+            PhotoSourceSheet(
+                onCamera: { showCamera = true },
+                onLibrary: { showPhotoPicker = true }
+            )
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in
                 Task {
@@ -69,24 +71,17 @@ struct ItemDetailSheet: View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
 
         if let photoURL = liveItem.photoURL, let url = URL(string: photoURL) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 300)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                case .failure:
-                    photoPlaceholder(systemName: "exclamationmark.triangle", text: "Failed to load")
-                case .empty:
-                    photoPlaceholder(systemName: "photo", text: "Loading...")
-                        .overlay { ProgressView() }
-                @unknown default:
-                    photoPlaceholder(systemName: "photo", text: "Loading...")
-                }
+            CachedAsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            } placeholder: {
+                photoPlaceholder(systemName: "photo", text: "Loading...")
+                    .overlay { ProgressView() }
             }
             .overlay(alignment: .topTrailing) {
                 Button {
