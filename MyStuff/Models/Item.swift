@@ -9,6 +9,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var photoURL: String?
     var itemPhotoURL: String?
     var locationChangedAt: Date?
+    var nfcTagUID: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -21,6 +22,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         photoURL: String? = nil,
         itemPhotoURL: String? = nil,
         locationChangedAt: Date? = nil,
+        nfcTagUID: String? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -32,6 +34,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.photoURL = photoURL
         self.itemPhotoURL = itemPhotoURL
         self.locationChangedAt = locationChangedAt
+        self.nfcTagUID = nfcTagUID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

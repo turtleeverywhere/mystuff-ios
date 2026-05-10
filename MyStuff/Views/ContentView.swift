@@ -24,6 +24,10 @@ struct ContentView: View {
             Tab("Locations", systemImage: "mappin.circle.fill", value: 2) {
                 LocationsView(viewModel: viewModel)
             }
+
+            Tab("NFC", systemImage: "wave.3.right.circle.fill", value: 3) {
+                NFCTabView(viewModel: viewModel)
+            }
         }
         .tabViewStyle(.sidebarAdaptable)
         .task {
