@@ -43,11 +43,17 @@ struct ItemsView: View {
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, photoData in
+                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData in
                         Task {
                             await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
-                            if let photoData, let newItem = viewModel.items.last(where: { $0.name == name }) {
-                                await viewModel.setItemPhoto(for: newItem, imageData: photoData)
+                            if let newItem = viewModel.items.last(where: { $0.name == name }) {
+                                if let itemPhotoData {
+                                    await viewModel.setItemPhoto(for: newItem, imageData: itemPhotoData)
+                                }
+                                if let locationPhotoData {
+                                    let refreshed = viewModel.items.first(where: { $0.id == newItem.id }) ?? newItem
+                                    await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
+                                }
                             }
                         }
                     }
@@ -57,7 +63,7 @@ struct ItemsView: View {
                 ItemFormSheet(
                     item: item,
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, photoData in
+                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData in
                         var updated = item
                         updated.name = name
                         updated.notes = notes
@@ -65,8 +71,12 @@ struct ItemsView: View {
                         updated.categoryId = categoryId
                         Task {
                             await viewModel.updateItem(updated)
-                            if let photoData {
-                                await viewModel.setItemPhoto(for: updated, imageData: photoData)
+                            if let itemPhotoData {
+                                await viewModel.setItemPhoto(for: updated, imageData: itemPhotoData)
+                            }
+                            if let locationPhotoData {
+                                let refreshed = viewModel.items.first(where: { $0.id == updated.id }) ?? updated
+                                await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
                             }
                         }
                     }
@@ -284,7 +294,7 @@ struct ItemPhotoPreviewSheet: View {
 struct ItemFormSheet: View {
     let item: Item?
     @Bindable var viewModel: StuffViewModel
-    let onSave: (String, String?, String?, String?, Data?) -> Void
+    let onSave: (String, String?, String?, String?, Data?, Data?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -294,10 +304,15 @@ struct ItemFormSheet: View {
     @State private var showingNewCategory = false
     @State private var newCategoryName = ""
     @State private var photoData: Data?
+    @State private var locationPhotoData: Data?
+    @State private var useSameForLocation: Bool
+    @State private var photoTarget: PhotoTarget = .item
     @State private var showPhotoSource = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
+
+    private enum PhotoTarget { case item, location }
 
     private let unassignedSentinel = "__unassigned__"
     private let uncategorizedSentinel = "__uncategorized__"
@@ -305,7 +320,7 @@ struct ItemFormSheet: View {
     init(
         item: Item? = nil,
         viewModel: StuffViewModel,
-        onSave: @escaping (String, String?, String?, String?, Data?) -> Void
+        onSave: @escaping (String, String?, String?, String?, Data?, Data?) -> Void
     ) {
         self.item = item
         self.viewModel = viewModel
@@ -314,6 +329,7 @@ struct ItemFormSheet: View {
         _notes = State(initialValue: item?.notes ?? "")
         _selectedLocationId = State(initialValue: item?.locationId ?? "__unassigned__")
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
+        _useSameForLocation = State(initialValue: item == nil)
     }
 
     var body: some View {
@@ -362,9 +378,58 @@ struct ItemFormSheet: View {
                     }
 
                     Button {
+                        photoTarget = .item
                         showPhotoSource = true
                     } label: {
                         Label(photoData != nil || item?.itemPhotoURL != nil ? "Change Photo" : "Add Photo", systemImage: "camera")
+                    }
+                }
+
+                Section("Location Photo") {
+                    Toggle("Use item photo", isOn: $useSameForLocation)
+
+                    if !useSameForLocation {
+                        if let locationPhotoData, let uiImage = UIImage(data: locationPhotoData) {
+                            HStack {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                                Spacer()
+
+                                Button(role: .destructive) {
+                                    self.locationPhotoData = nil
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                            }
+                        } else if let existingURL = item?.photoURL, !existingURL.isEmpty {
+                            HStack {
+                                CachedAsyncImage(url: URL(string: existingURL)) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 80, height: 80)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                } placeholder: {
+                                    ProgressView()
+                                        .frame(width: 80, height: 80)
+                                }
+                                Spacer()
+                                Text("Current photo")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Button {
+                            photoTarget = .location
+                            showPhotoSource = true
+                        } label: {
+                            Label(locationPhotoData != nil || item?.photoURL != nil ? "Change Photo" : "Add Photo", systemImage: "camera")
+                        }
                     }
                 }
 
@@ -401,7 +466,8 @@ struct ItemFormSheet: View {
                     Button("Save") {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
                         let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
-                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData)
+                        let resolvedLocationData: Data? = useSameForLocation ? photoData : locationPhotoData
+                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData, resolvedLocationData)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -433,7 +499,7 @@ struct ItemFormSheet: View {
             .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { data in
-                    photoData = data
+                    assignPhotoData(data)
                 }
                 .ignoresSafeArea()
             }
@@ -441,11 +507,18 @@ struct ItemFormSheet: View {
                 guard let selectedPhoto else { return }
                 Task {
                     if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
-                        photoData = data
+                        assignPhotoData(data)
                     }
                     self.selectedPhoto = nil
                 }
             }
+        }
+    }
+
+    private func assignPhotoData(_ data: Data) {
+        switch photoTarget {
+        case .item: photoData = data
+        case .location: locationPhotoData = data
         }
     }
 }

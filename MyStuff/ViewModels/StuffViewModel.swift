@@ -163,6 +163,11 @@ final class StuffViewModel {
 
     // MARK: - Data Loading
 
+    private static func deduped<T: Identifiable>(_ values: [T]) -> [T] where T.ID: Hashable {
+        var seen = Set<T.ID>()
+        return values.filter { seen.insert($0.id).inserted }
+    }
+
     func loadData() async {
         errorMessage = nil
 
@@ -173,9 +178,9 @@ final class StuffViewModel {
         let ci = await cachedItems ?? []
         let cl = await cachedLocations ?? []
         let cc = await cachedCategories ?? []
-        if !ci.isEmpty { items = ci }
-        if !cl.isEmpty { locations = cl }
-        if !cc.isEmpty { categories = cc }
+        if !ci.isEmpty { items = Self.deduped(ci) }
+        if !cl.isEmpty { locations = Self.deduped(cl) }
+        if !cc.isEmpty { categories = Self.deduped(cc) }
 
         // Stage 2: refresh from server (spinner only if cache was empty)
         let hadCachedData = !ci.isEmpty || !cl.isEmpty || !cc.isEmpty
@@ -184,9 +189,9 @@ final class StuffViewModel {
             async let serverItems = service.fetchItems(source: .server)
             async let serverLocations = service.fetchLocations(source: .server)
             async let serverCategories = service.fetchCategories(source: .server)
-            items = try await serverItems
-            locations = try await serverLocations
-            categories = try await serverCategories
+            items = Self.deduped(try await serverItems)
+            locations = Self.deduped(try await serverLocations)
+            categories = Self.deduped(try await serverCategories)
         } catch {
             // Keep cached data; only surface error if we have nothing
             if !hadCachedData {
@@ -206,7 +211,9 @@ final class StuffViewModel {
         let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil)
         do {
             try await service.addItem(item)
-            items.append(item)
+            if !items.contains(where: { $0.id == item.id }) {
+                items.append(item)
+            }
             HapticManager.success()
         } catch {
             errorMessage = error.localizedDescription
@@ -228,18 +235,22 @@ final class StuffViewModel {
     }
 
     func deleteItem(_ item: Item) async {
+        // Remove from local state synchronously so SwiftUI's swipe-delete animation
+        // and the data source stay in sync. Remote cleanup happens after.
+        items.removeAll { $0.id == item.id }
+        uploadManager.removeLocal(itemId: item.id, filename: "photo")
+        uploadManager.removeLocal(itemId: item.id, filename: "item_photo")
+        HapticManager.impact()
+
         do {
-            if let url = item.photoURL {
-                try? await storageService.deletePhoto(url: url)
-            }
-            if let url = item.itemPhotoURL {
-                try? await storageService.deletePhoto(url: url)
-            }
             try await service.deleteItem(item)
-            items.removeAll { $0.id == item.id }
-            HapticManager.impact()
         } catch {
             errorMessage = error.localizedDescription
+        }
+        for url in [item.photoURL, item.itemPhotoURL].compactMap({ $0 }) {
+            if url.hasPrefix("http") || url.hasPrefix("gs://") {
+                try? await storageService.deletePhoto(url: url)
+            }
         }
     }
 
@@ -265,11 +276,19 @@ final class StuffViewModel {
             }
             updated.updatedAt = .now
             try? await service.updateItem(updated)
-            items[index] = updated
+            // Re-resolve index — item may have been deleted during the await
+            guard let freshIndex = items.firstIndex(where: { $0.id == itemId }) else {
+                // updateItem was an upsert; clean up the resurrected doc.
+                try? await service.deleteItem(updated)
+                return
+            }
+            items[freshIndex] = updated
         }
     }
 
     func setPhoto(for item: Item, imageData: Data) async {
+        // Bail if item was deleted before this call ran (avoids upsert recreation).
+        guard items.contains(where: { $0.id == item.id }) else { return }
         guard let compressed = ImageHelper.compress(imageData) else { return }
         let oldRemote = item.photoURL?.hasPrefix("file") == true ? nil : item.photoURL
         if let oldURL = item.photoURL, let url = URL(string: oldURL) {
@@ -283,9 +302,13 @@ final class StuffViewModel {
         updated.updatedAt = .now
         do {
             try await service.updateItem(updated)
-            if let index = items.firstIndex(where: { $0.id == updated.id }) {
-                items[index] = updated
+            // Re-check after await — item may have been deleted during the suspension.
+            guard let index = items.firstIndex(where: { $0.id == updated.id }) else {
+                try? await service.deleteItem(updated)
+                uploadManager.removeLocal(itemId: item.id, filename: "photo")
+                return
             }
+            items[index] = updated
             HapticManager.success()
         } catch {
             errorMessage = error.localizedDescription
@@ -297,6 +320,8 @@ final class StuffViewModel {
     }
 
     func setItemPhoto(for item: Item, imageData: Data) async {
+        // Bail if item was deleted before this call ran (avoids upsert recreation).
+        guard items.contains(where: { $0.id == item.id }) else { return }
         guard let compressed = ImageHelper.compress(imageData) else { return }
         let oldRemote = item.itemPhotoURL?.hasPrefix("file") == true ? nil : item.itemPhotoURL
         if let oldURL = item.itemPhotoURL, let url = URL(string: oldURL) {
@@ -310,9 +335,13 @@ final class StuffViewModel {
         updated.updatedAt = .now
         do {
             try await service.updateItem(updated)
-            if let index = items.firstIndex(where: { $0.id == updated.id }) {
-                items[index] = updated
+            // Re-check after await — item may have been deleted during the suspension.
+            guard let index = items.firstIndex(where: { $0.id == updated.id }) else {
+                try? await service.deleteItem(updated)
+                uploadManager.removeLocal(itemId: item.id, filename: "item_photo")
+                return
             }
+            items[index] = updated
             HapticManager.success()
         } catch {
             errorMessage = error.localizedDescription
