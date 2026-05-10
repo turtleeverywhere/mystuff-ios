@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseFirestore
 import GoogleSignIn
 
 @main
@@ -9,6 +10,14 @@ struct MyStuffApp: App {
 
     init() {
         FirebaseApp.configure()
+
+        // Enable persistent on-disk cache so lists render instantly on launch.
+        let settings = FirestoreSettings()
+        settings.cacheSettings = PersistentCacheSettings(
+            sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited)
+        )
+        Firestore.firestore().settings = settings
+
         _authService = State(initialValue: AuthService())
     }
 

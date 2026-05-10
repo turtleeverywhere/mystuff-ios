@@ -43,7 +43,7 @@ final class MockDataService: DataService, @unchecked Sendable {
 
     // MARK: - Items
 
-    func fetchItems() async throws -> [Item] {
+    func fetchItems(source: FetchSource) async throws -> [Item] {
         items
     }
 
@@ -63,7 +63,7 @@ final class MockDataService: DataService, @unchecked Sendable {
 
     // MARK: - Locations
 
-    func fetchLocations() async throws -> [Location] {
+    func fetchLocations(source: FetchSource) async throws -> [Location] {
         locations
     }
 
@@ -83,7 +83,7 @@ final class MockDataService: DataService, @unchecked Sendable {
 
     // MARK: - Categories
 
-    func fetchCategories() async throws -> [Category] {
+    func fetchCategories(source: FetchSource) async throws -> [Category] {
         categories
     }
 

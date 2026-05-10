@@ -164,17 +164,34 @@ final class StuffViewModel {
     // MARK: - Data Loading
 
     func loadData() async {
-        isLoading = true
         errorMessage = nil
+
+        // Stage 1: hydrate from cache (instant, no spinner)
+        async let cachedItems = try? service.fetchItems(source: .cache)
+        async let cachedLocations = try? service.fetchLocations(source: .cache)
+        async let cachedCategories = try? service.fetchCategories(source: .cache)
+        let ci = await cachedItems ?? []
+        let cl = await cachedLocations ?? []
+        let cc = await cachedCategories ?? []
+        if !ci.isEmpty { items = ci }
+        if !cl.isEmpty { locations = cl }
+        if !cc.isEmpty { categories = cc }
+
+        // Stage 2: refresh from server (spinner only if cache was empty)
+        let hadCachedData = !ci.isEmpty || !cl.isEmpty || !cc.isEmpty
+        isLoading = !hadCachedData
         do {
-            async let fetchedItems = service.fetchItems()
-            async let fetchedLocations = service.fetchLocations()
-            async let fetchedCategories = service.fetchCategories()
-            items = try await fetchedItems
-            locations = try await fetchedLocations
-            categories = try await fetchedCategories
+            async let serverItems = service.fetchItems(source: .server)
+            async let serverLocations = service.fetchLocations(source: .server)
+            async let serverCategories = service.fetchCategories(source: .server)
+            items = try await serverItems
+            locations = try await serverLocations
+            categories = try await serverCategories
         } catch {
-            errorMessage = error.localizedDescription
+            // Keep cached data; only surface error if we have nothing
+            if !hadCachedData {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
 

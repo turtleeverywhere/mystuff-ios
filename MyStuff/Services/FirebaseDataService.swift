@@ -24,8 +24,10 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
 
     // MARK: - Items
 
-    func fetchItems() async throws -> [Item] {
-        let snapshot = try await itemsCollection.order(by: "createdAt", descending: true).getDocuments()
+    func fetchItems(source: FetchSource) async throws -> [Item] {
+        let snapshot = try await itemsCollection
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: source.firestoreSource)
         return try snapshot.documents.map { try $0.data(as: Item.self) }
     }
 
@@ -43,8 +45,10 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
 
     // MARK: - Locations
 
-    func fetchLocations() async throws -> [Location] {
-        let snapshot = try await locationsCollection.order(by: "createdAt", descending: true).getDocuments()
+    func fetchLocations(source: FetchSource) async throws -> [Location] {
+        let snapshot = try await locationsCollection
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: source.firestoreSource)
         return try snapshot.documents.map { try $0.data(as: Location.self) }
     }
 
@@ -62,8 +66,10 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
 
     // MARK: - Categories
 
-    func fetchCategories() async throws -> [Category] {
-        let snapshot = try await categoriesCollection.order(by: "createdAt", descending: true).getDocuments()
+    func fetchCategories(source: FetchSource) async throws -> [Category] {
+        let snapshot = try await categoriesCollection
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: source.firestoreSource)
         return try snapshot.documents.map { try $0.data(as: Category.self) }
     }
 
@@ -77,5 +83,15 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
 
     func deleteCategory(_ category: Category) async throws {
         try await categoriesCollection.document(category.id).delete()
+    }
+}
+
+private extension FetchSource {
+    var firestoreSource: FirestoreSource {
+        switch self {
+        case .cache: return .cache
+        case .server: return .server
+        case .default: return .default
+        }
     }
 }
