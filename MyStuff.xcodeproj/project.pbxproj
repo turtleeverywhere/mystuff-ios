@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		46641B7C2F7D4F1D008C88BB /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = AA000080 /* FirebaseFirestore */; };
+		46641B7D2F7D4F1D008C88BB /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = AA000082 /* FirebaseAuth */; };
+		46641B7E2F7D4F1D008C88BB /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000084 /* GoogleSignIn */; };
+		46641B7F2F7D4F1D008C88BB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AA000086 /* GoogleSignInSwift */; };
+		AA000089 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = AA000088 /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,13 +44,18 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				46641B7F2F7D4F1D008C88BB /* GoogleSignInSwift in Frameworks */,
+				46641B7E2F7D4F1D008C88BB /* GoogleSignIn in Frameworks */,
+				46641B7D2F7D4F1D008C88BB /* FirebaseAuth in Frameworks */,
+				46641B7C2F7D4F1D008C88BB /* FirebaseFirestore in Frameworks */,
+				AA000089 /* FirebaseStorage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		AA000030 /* Root */ = {
+		AA000030 = {
 			isa = PBXGroup;
 			children = (
 				AA000003 /* MyStuff */,
@@ -85,6 +95,7 @@
 				AA000082 /* FirebaseAuth */,
 				AA000084 /* GoogleSignIn */,
 				AA000086 /* GoogleSignInSwift */,
+				AA000088 /* FirebaseStorage */,
 			);
 			productName = MyStuff;
 			productReference = AA000001 /* MyStuff.app */;
@@ -112,7 +123,7 @@
 				en,
 				Base,
 			);
-			mainGroup = AA000030 /* Root */;
+			mainGroup = AA000030;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA000081 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
@@ -156,10 +167,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = WDJPX25GFC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MyStuff/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "My Stuff";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -188,10 +201,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = WDJPX25GFC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MyStuff/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "My Stuff";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -397,8 +412,12 @@
 			package = AA000085 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
 		};
+		AA000088 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000081 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = AA000000 /* Project object */;
 }

@@ -29,5 +29,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Take photos of your items at their location</string>
 </dict>
 </plist>
