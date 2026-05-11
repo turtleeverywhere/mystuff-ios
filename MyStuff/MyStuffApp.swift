@@ -18,12 +18,20 @@ struct MyStuffApp: App {
         )
         Firestore.firestore().settings = settings
 
+        // Make table/collection/scroll chrome transparent so the global
+        // background gradient shows through Lists and Forms.
+        UITableView.appearance().backgroundColor = .clear
+        UICollectionView.appearance().backgroundColor = .clear
+        UIScrollView.appearance().backgroundColor = .clear
+
         _authService = State(initialValue: AuthService())
     }
 
     var body: some Scene {
         WindowGroup {
             RootView(authService: authService)
+                .foregroundStyle(Color.appText)
+                .background(LinearGradient.appBackground.ignoresSafeArea())
                 .onOpenURL { url in
                     GIDSignIn.sharedInstance.handle(url)
                 }
