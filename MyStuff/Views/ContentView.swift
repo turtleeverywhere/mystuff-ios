@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var viewModel = StuffViewModel()
     @State private var selectedTab = 0
     @State private var showingProfile = false
+    @State private var pendingNFCItemId: String?
+    @State private var deepLinkedItem: Item?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -24,6 +26,10 @@ struct ContentView: View {
             Tab("Locations", systemImage: "mappin.circle.fill", value: 2) {
                 LocationsView(viewModel: viewModel)
             }
+
+            Tab("NFC", systemImage: "wave.3.right.circle.fill", value: 3) {
+                NFCTabView(viewModel: viewModel)
+            }
         }
         .tabViewStyle(.sidebarAdaptable)
         .task {
@@ -32,6 +38,29 @@ struct ContentView: View {
         .sheet(isPresented: $showingProfile) {
             ProfileSheet(authService: authService)
                 .presentationDetents([.medium])
+        }
+        .sheet(item: $deepLinkedItem) { item in
+            NFCUpdateSheet(item: item, viewModel: viewModel)
+        }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { handleDeepLink(url) }
+        }
+        .onOpenURL { url in handleDeepLink(url) }
+        .onChange(of: viewModel.items) { resolvePendingDeepLink() }
+        .onChange(of: pendingNFCItemId) { resolvePendingDeepLink() }
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard let id = NFCLink.itemId(from: url) else { return }
+        pendingNFCItemId = id
+    }
+
+    private func resolvePendingDeepLink() {
+        guard let id = pendingNFCItemId else { return }
+        if let item = viewModel.items.first(where: { $0.id == id }) {
+            pendingNFCItemId = nil
+            deepLinkedItem = item
+            HapticManager.success()
         }
     }
 

@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["WDJPX25GFC.com.flyingturtle.mystuff"],
+        "components": [
+          { "/": "/item/*" }
+        ]
+      }
+    ]
+  }
+}

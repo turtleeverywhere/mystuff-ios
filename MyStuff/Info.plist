@@ -31,5 +31,7 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos of your items at their location</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>Scan NFC tags to update item locations and photos</string>
 </dict>
 </plist>

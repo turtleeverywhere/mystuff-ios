@@ -375,6 +375,40 @@ final class StuffViewModel {
         }
     }
 
+    /// Find the item currently paired to a given NFC tag serial.
+    func item(forTagUID uid: String) -> Item? {
+        items.first { $0.nfcTagUID == uid }
+    }
+
+    /// Clear NFC tag pairing on a given item. Used when reassigning a tag.
+    func clearNFCTag(itemId: String) async {
+        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        var updated = items[index]
+        updated.nfcTagUID = nil
+        await updateItem(updated)
+    }
+
+    /// Set a tag UID on an item without bumping locationChangedAt.
+    func setNFCTag(itemId: String, uid: String) async {
+        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        var updated = items[index]
+        updated.nfcTagUID = uid
+        await updateItem(updated)
+    }
+
+    /// Update both location and (optionally) location photo from an NFC scan.
+    func applyNFCUpdate(itemId: String, locationId: String?, photoData: Data?) async {
+        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        var updated = items[index]
+        updated.locationId = locationId
+        updated.locationChangedAt = .now
+        await updateItem(updated)
+        if let photoData {
+            let refreshed = items.first(where: { $0.id == itemId }) ?? updated
+            await setPhoto(for: refreshed, imageData: photoData)
+        }
+    }
+
     func moveItem(_ item: Item, toLocationId: String?) async {
         var updated = item
         updated.locationId = toLocationId
