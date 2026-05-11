@@ -1,6 +1,27 @@
 import Foundation
 @preconcurrency import CoreNFC
 
+/// Universal link host used for NFC tag URLs. Tags written as
+/// `https://<host>/item/<uuid>` so iOS can route background tag taps to the app.
+enum NFCLink {
+    static let host = "mystuff.coding-turtle.org"
+    static let pathPrefix = "/item/"
+
+    static func url(forItemId id: String) -> String {
+        "https://\(host)\(pathPrefix)\(id)"
+    }
+
+    /// Extract item UUID from any URL we recognize as an NFC payload.
+    static func itemId(from url: URL) -> String? {
+        // https://<host>/item/<uuid>
+        if url.scheme == "https", url.host == host, url.path.hasPrefix(pathPrefix) {
+            let id = String(url.path.dropFirst(pathPrefix.count))
+            return id.isEmpty ? nil : id
+        }
+        return nil
+    }
+}
+
 struct NFCScanResult: Sendable {
     /// Parsed item UUID if the tag's NDEF contains a `mystuff://item/<uuid>` URI record.
     /// After a successful write, this is the newly written ID.
@@ -184,7 +205,7 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
                 finish(.failure(NFCError.readOnlyTag))
                 return
             }
-            let uri = "mystuff://item/\(payload)"
+            let uri = NFCLink.url(forItemId: payload)
             guard let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(string: uri) else {
                 session.invalidate(errorMessage: "Failed to encode payload")
                 finish(.failure(NFCError.writeFailed("payload encoding")))
@@ -213,10 +234,8 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
         guard let records = message?.records else { return nil }
         for record in records {
             if let url = record.wellKnownTypeURIPayload(),
-               url.scheme == "mystuff",
-               url.host == "item" {
-                let id = url.lastPathComponent
-                if !id.isEmpty { return id }
+               let id = NFCLink.itemId(from: url) {
+                return id
             }
         }
         return nil
