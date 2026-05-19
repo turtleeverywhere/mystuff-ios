@@ -118,6 +118,7 @@ struct ItemsView: View {
                 }
             }
         }
+        .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
     // MARK: - Items List

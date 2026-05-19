@@ -125,6 +125,7 @@ struct HomeView: View {
                 }
             }
         }
+        .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
     // MARK: - Main Content

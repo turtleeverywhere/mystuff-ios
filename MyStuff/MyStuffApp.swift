@@ -24,17 +24,31 @@ struct MyStuffApp: App {
         UICollectionView.appearance().backgroundColor = .clear
         UIScrollView.appearance().backgroundColor = .clear
 
+        // Transparent tab bar + navigation bar so the gradient shows through.
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithTransparentBackground()
+        UITabBar.appearance().standardAppearance = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithTransparentBackground()
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        UINavigationBar.appearance().compactAppearance = navAppearance
+
         _authService = State(initialValue: AuthService())
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(authService: authService)
-                .foregroundStyle(Color.appText)
-                .background(LinearGradient.appBackground.ignoresSafeArea())
-                .onOpenURL { url in
-                    GIDSignIn.sharedInstance.handle(url)
-                }
+            ZStack {
+                LinearGradient.appBackground.ignoresSafeArea()
+                RootView(authService: authService)
+                    .foregroundStyle(Color.appText)
+            }
+            .onOpenURL { url in
+                GIDSignIn.sharedInstance.handle(url)
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ struct ContentView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .background(LinearGradient.appBackground.ignoresSafeArea())
         .task {
             await viewModel.loadData()
         }

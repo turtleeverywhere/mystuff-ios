@@ -6,13 +6,8 @@ struct SignInView: View {
 
     var body: some View {
         ZStack {
-            // Gradient background
-            LinearGradient(
-                colors: [.blue.opacity(0.15), .purple.opacity(0.1), .pink.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            LinearGradient.appBackground
+                .ignoresSafeArea()
 
             VStack(spacing: 40) {
                 Spacer()

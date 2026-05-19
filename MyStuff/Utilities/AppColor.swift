@@ -38,9 +38,9 @@ extension Color {
 }
 
 extension LinearGradient {
-    /// Default app background gradient — dark → mid-blue, top to bottom.
+    /// Default app background gradient — mid-blue → cream, top to bottom.
     static let appBackground = LinearGradient(
-        colors: [.appBackground, .appPrimary],
+        colors: [.appPrimary, .appText],
         startPoint: .top,
         endPoint: .bottom
     )

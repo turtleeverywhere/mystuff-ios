@@ -69,6 +69,7 @@ struct LocationsView: View {
                 }
             }
         }
+        .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
     // MARK: - Locations List

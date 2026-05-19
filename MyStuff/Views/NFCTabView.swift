@@ -20,7 +20,7 @@ struct NFCTabView: View {
 
                 Image(systemName: "wave.3.right.circle.fill")
                     .font(.system(size: 96))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(Color.appAccent)
                     .symbolRenderingMode(.hierarchical)
 
                 Text(headline)
@@ -45,6 +45,7 @@ struct NFCTabView: View {
                             .padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(Color.appAccent)
                     .controlSize(.large)
                     .disabled(isScanning)
                     .padding(.horizontal, 32)
@@ -85,6 +86,7 @@ struct NFCTabView: View {
                 Text(errorMessage ?? "")
             }
         }
+        .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
     private var headline: String {
