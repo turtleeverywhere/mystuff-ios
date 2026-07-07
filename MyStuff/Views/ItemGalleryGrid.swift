@@ -9,31 +9,33 @@ enum GalleryPhotoKind {
 struct ItemGalleryGrid<TileMenu: View>: View {
     let items: [Item]
     let kind: GalleryPhotoKind
+    let columns: Int
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
     let tileMenu: ((Item) -> TileMenu)?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
-    ]
+    private var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: max(1, columns))
+    }
 
     init(
         items: [Item],
         kind: GalleryPhotoKind,
+        columns: Int = 2,
         onTap: @escaping (Item) -> Void,
         onAddPhoto: @escaping (Item) -> Void,
         @ViewBuilder tileMenu: @escaping (Item) -> TileMenu
     ) {
         self.items = items
         self.kind = kind
+        self.columns = columns
         self.onTap = onTap
         self.onAddPhoto = onAddPhoto
         self.tileMenu = tileMenu
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
+        LazyVGrid(columns: gridColumns, spacing: 12) {
             ForEach(items) { item in
                 tile(item)
             }
@@ -60,11 +62,13 @@ extension ItemGalleryGrid where TileMenu == EmptyView {
     init(
         items: [Item],
         kind: GalleryPhotoKind,
+        columns: Int = 2,
         onTap: @escaping (Item) -> Void,
         onAddPhoto: @escaping (Item) -> Void
     ) {
         self.items = items
         self.kind = kind
+        self.columns = columns
         self.onTap = onTap
         self.onAddPhoto = onAddPhoto
         self.tileMenu = nil
