@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Bindable var viewModel: StuffViewModel
+    var onProfileTap: (() -> Void)? = nil
     @State private var selectedItem: Item?
     @State private var detailItem: Item?
     @State private var itemToPromptPhoto: Item?
@@ -16,6 +17,9 @@ struct HomeView: View {
     @State private var filterCategoryIds: Set<String> = []
     @State private var filterLocationIds: Set<String> = []
     @State private var showFilters = false
+    @AppStorage("homeViewMode") private var viewMode = "list"
+
+    private var isGallery: Bool { viewMode == "gallery" }
 
     /// Items matching current search + filters
     private var homeFilteredItems: Set<String> {
@@ -59,6 +63,24 @@ struct HomeView: View {
             }
             .navigationTitle("My Stuff")
             .searchable(text: $homeSearchText, prompt: "Search items")
+            .toolbar {
+                if let onProfileTap {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: onProfileTap) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.title3)
+                                .symbolRenderingMode(.hierarchical)
+                        }
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        withAnimation { viewMode = isGallery ? "list" : "gallery" }
+                    } label: {
+                        Image(systemName: isGallery ? "list.bullet" : "square.grid.2x2")
+                    }
+                }
+            }
             .sheet(item: $selectedItem) { item in
                 MoveItemSheet(
                     item: item,
@@ -66,7 +88,7 @@ struct HomeView: View {
                     onMove: { locationId in
                         Task {
                             await viewModel.moveItem(item, toLocationId: locationId)
-                            if item.photoURL != nil {
+                            if item.hasLocationPhoto {
                                 itemToPromptPhoto = item
                             }
                         }
@@ -329,6 +351,13 @@ struct HomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
+            } else if isGallery {
+                galleryGrid(directItems)
+
+                ForEach(descendantEntries, id: \.sublocation.id) { entry in
+                    sublocationHeader(entry.sublocation, relativeTo: location)
+                    galleryGrid(entry.items)
+                }
             } else {
                 ForEach(directItems) { item in
                     itemRow(item, tag: categoryTag(for: item))
@@ -384,8 +413,12 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            ForEach(items) { item in
-                itemRow(item, tag: categoryTag(for: item))
+            if isGallery {
+                galleryGrid(items)
+            } else {
+                ForEach(items) { item in
+                    itemRow(item, tag: categoryTag(for: item))
+                }
             }
         }
         .padding()
@@ -413,6 +446,8 @@ struct HomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
+            } else if isGallery {
+                galleryGrid(items)
             } else {
                 ForEach(items) { item in
                     itemRow(item, tag: locationTag(for: item))
@@ -439,12 +474,53 @@ struct HomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
 
-            ForEach(items) { item in
-                itemRow(item, tag: locationTag(for: item))
+            if isGallery {
+                galleryGrid(items)
+            } else {
+                ForEach(items) { item in
+                    itemRow(item, tag: locationTag(for: item))
+                }
             }
         }
         .padding()
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Gallery Grid
+
+    private func galleryGrid(_ items: [Item]) -> some View {
+        ItemGalleryGrid(
+            items: items,
+            kind: .location,
+            onTap: { detailItem = $0 },
+            onAddPhoto: { item in
+                photoSourceItem = item
+                showPhotoSource = true
+            },
+            tileMenu: { item in
+                itemMenuItems(item)
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func itemMenuItems(_ item: Item) -> some View {
+        Button {
+            selectedItem = item
+        } label: {
+            Label("Move to Location", systemImage: "arrow.right.circle")
+        }
+        Button {
+            photoSourceItem = item
+            showPhotoSource = true
+        } label: {
+            Label("Change Photo", systemImage: "camera")
+        }
+        Button {
+            detailItem = item
+        } label: {
+            Label("Details", systemImage: "info.circle")
+        }
     }
 
     // MARK: - Item Row
@@ -486,12 +562,15 @@ struct HomeView: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            itemMenuItems(item)
+        }
     }
 
     @ViewBuilder
     private func itemThumbnail(_ item: Item) -> some View {
-        if let photoURL = item.photoURL, let url = URL(string: photoURL) {
-            CachedAsyncImage(url: url) { image in
+        if item.hasLocationPhoto {
+            PhotoView(item: item, kind: .location, size: .thumbnail(84)) { image in
                 image
                     .resizable()
                     .scaledToFill()
@@ -504,10 +583,6 @@ struct HomeView: View {
             }
             .onTapGesture {
                 previewItem = item
-            }
-            .onLongPressGesture {
-                photoSourceItem = item
-                showPhotoSource = true
             }
         } else {
             Image(systemName: "photo.circle.fill")
@@ -619,8 +694,8 @@ struct LocationPhotoPreviewSheet: View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
         NavigationStack {
             Group {
-                if let photoURL = liveItem.photoURL, let url = URL(string: photoURL) {
-                    CachedAsyncImage(url: url) { image in
+                if liveItem.hasLocationPhoto {
+                    PhotoView(item: liveItem, kind: .location, size: .full) { image in
                         image
                             .resizable()
                             .scaledToFit()
