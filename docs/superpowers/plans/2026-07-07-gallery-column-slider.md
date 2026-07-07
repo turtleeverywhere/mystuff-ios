@@ -93,12 +93,41 @@ git commit -m "feat: configurable column count in ItemGalleryGrid"
 ### Task 2: Column slider in Home + Items toolbars
 
 **Files:**
+- Create: `MyStuff/Views/GalleryColumnSlider.swift`
 - Modify: `MyStuff/Views/HomeView.swift` (state ~line 20, toolbar ~line 76, gallery call ~line 491)
 - Modify: `MyStuff/Views/ItemsView.swift` (state ~line 16, toolbar ~line 41, gallery call ~line 194)
 
 **Interfaces:**
 - Consumes: `ItemGalleryGrid` `columns: Int = 2` init param (Task 1).
-- Produces: nothing consumed later.
+- Produces: `GalleryColumnSlider` (no-arg `View`; owns its own `@AppStorage("galleryColumns")`), used by both toolbars.
+
+- [ ] **Step 0: Create shared slider view**
+
+Create `MyStuff/Views/GalleryColumnSlider.swift`:
+
+```swift
+import SwiftUI
+
+/// Toolbar slider controlling the shared gallery column count (iPad only).
+struct GalleryColumnSlider: View {
+    @AppStorage("galleryColumns") private var galleryColumns = 2
+
+    var body: some View {
+        Slider(
+            value: Binding(
+                get: { Double(galleryColumns) },
+                set: { newValue in
+                    withAnimation { galleryColumns = Int(newValue.rounded()) }
+                }
+            ),
+            in: 2...4,
+            step: 1
+        )
+        .frame(width: 140)
+        .accessibilityLabel("Gallery columns")
+    }
+}
+```
 
 - [ ] **Step 1: HomeView state**
 
@@ -118,18 +147,7 @@ Inside `.toolbar { ... }`, directly BEFORE the existing `ToolbarItem(placement: 
 ```swift
                 if isGallery && horizontalSizeClass == .regular {
                     ToolbarItem(placement: .primaryAction) {
-                        Slider(
-                            value: Binding(
-                                get: { Double(galleryColumns) },
-                                set: { newValue in
-                                    withAnimation { galleryColumns = Int(newValue.rounded()) }
-                                }
-                            ),
-                            in: 2...4,
-                            step: 1
-                        )
-                        .frame(width: 140)
-                        .accessibilityLabel("Gallery columns")
+                        GalleryColumnSlider()
                     }
                 }
 ```
@@ -158,18 +176,7 @@ Inside `.toolbar { ... }`, directly BEFORE the existing `ToolbarItem(placement: 
 ```swift
                 if isGallery && horizontalSizeClass == .regular {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Slider(
-                            value: Binding(
-                                get: { Double(galleryColumns) },
-                                set: { newValue in
-                                    withAnimation { galleryColumns = Int(newValue.rounded()) }
-                                }
-                            ),
-                            in: 2...4,
-                            step: 1
-                        )
-                        .frame(width: 140)
-                        .accessibilityLabel("Gallery columns")
+                        GalleryColumnSlider()
                     }
                 }
 ```
@@ -190,7 +197,7 @@ Expected: `** BUILD SUCCEEDED **`
 - [ ] **Step 8: Commit**
 
 ```bash
-git add MyStuff/Views/HomeView.swift MyStuff/Views/ItemsView.swift
+git add MyStuff/Views/GalleryColumnSlider.swift MyStuff/Views/HomeView.swift MyStuff/Views/ItemsView.swift
 git commit -m "feat: iPad column-count slider for Home + Items galleries"
 ```
 
