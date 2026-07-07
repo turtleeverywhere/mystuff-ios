@@ -182,27 +182,7 @@ struct ItemsView: View {
                     }
                 }
                 .contextMenu {
-                    Button {
-                        movingItem = item
-                    } label: {
-                        Label("Move to Location", systemImage: "arrow.right.circle")
-                    }
-                    Button {
-                        editingItem = item
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                    Button {
-                        photoSourceItem = item
-                        showPhotoSource = true
-                    } label: {
-                        Label("Change Photo", systemImage: "camera")
-                    }
-                    Button(role: .destructive) {
-                        Task { await viewModel.deleteItem(item) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
+                    itemMenuItems(item)
                 }
             }
         }
@@ -221,30 +201,37 @@ struct ItemsView: View {
                     showPhotoSource = true
                 },
                 tileMenu: { item in
-                    Button {
-                        movingItem = item
-                    } label: {
-                        Label("Move to Location", systemImage: "arrow.right.circle")
-                    }
-                    Button {
-                        editingItem = item
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-                    Button {
-                        photoSourceItem = item
-                        showPhotoSource = true
-                    } label: {
-                        Label("Change Photo", systemImage: "camera")
-                    }
-                    Button(role: .destructive) {
-                        Task { await viewModel.deleteItem(item) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
+                    itemMenuItems(item)
                 }
             )
             .padding()
+        }
+    }
+
+    // MARK: - Shared Menu
+
+    @ViewBuilder
+    private func itemMenuItems(_ item: Item) -> some View {
+        Button {
+            movingItem = item
+        } label: {
+            Label("Move to Location", systemImage: "arrow.right.circle")
+        }
+        Button {
+            editingItem = item
+        } label: {
+            Label("Edit", systemImage: "pencil")
+        }
+        Button {
+            photoSourceItem = item
+            showPhotoSource = true
+        } label: {
+            Label("Change Photo", systemImage: "camera")
+        }
+        Button(role: .destructive) {
+            Task { await viewModel.deleteItem(item) }
+        } label: {
+            Label("Delete", systemImage: "trash")
         }
     }
 

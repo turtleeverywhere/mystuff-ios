@@ -178,7 +178,7 @@ final class StuffViewModel {
         let ci = await cachedItems ?? []
         let cl = await cachedLocations ?? []
         let cc = await cachedCategories ?? []
-        if !ci.isEmpty { items = Self.deduped(ci) }
+        if !ci.isEmpty { items = Self.deduped(Self.migratedPhotoFields(ci)) }
         if !cl.isEmpty { locations = Self.deduped(cl) }
         if !cc.isEmpty { categories = Self.deduped(cc) }
 
@@ -189,9 +189,12 @@ final class StuffViewModel {
             async let serverItems = service.fetchItems(source: .server)
             async let serverLocations = service.fetchLocations(source: .server)
             async let serverCategories = service.fetchCategories(source: .server)
-            items = Self.deduped(try await serverItems)
+            let rawItems = try await serverItems
+            items = Self.deduped(Self.migratedPhotoFields(rawItems))
             locations = Self.deduped(try await serverLocations)
             categories = Self.deduped(try await serverCategories)
+            // Persist any in-place migrations back to Firestore.
+            await persistPhotoMigrationsIfNeeded(rawItems: rawItems)
         } catch {
             // Keep cached data; only surface error if we have nothing
             if !hadCachedData {
@@ -203,6 +206,53 @@ final class StuffViewModel {
         // Wire up offline photo upload handler + process any pending uploads
         setupPhotoUploadHandler()
         await uploadManager.processPending()
+    }
+
+    // MARK: - Photo schema migration
+    //
+    // Legacy `photoURL` / `itemPhotoURL` could be either a Firebase https URL (uploaded image)
+    // or a file:// URL (offline-pending). New schema: those fields hold a local-relative
+    // path like "Photos/{id}_photo.jpg"; the remote URL lives in `remotePhotoURL` /
+    // `remoteItemPhotoURL`. Migrate transparently.
+
+    private static func migratedPhotoFields(_ items: [Item]) -> [Item] {
+        items.map { migratedPhotoFields($0) }
+    }
+
+    private static func migratedPhotoFields(_ item: Item) -> Item {
+        var updated = item
+        if let url = updated.photoURL {
+            if url.hasPrefix("http") || url.hasPrefix("gs://") {
+                if updated.remotePhotoURL == nil { updated.remotePhotoURL = url }
+                updated.photoURL = nil
+            } else if url.hasPrefix("file://") {
+                // Stale absolute path from a prior install. Local file is gone.
+                updated.photoURL = nil
+            }
+        }
+        if let url = updated.itemPhotoURL {
+            if url.hasPrefix("http") || url.hasPrefix("gs://") {
+                if updated.remoteItemPhotoURL == nil { updated.remoteItemPhotoURL = url }
+                updated.itemPhotoURL = nil
+            } else if url.hasPrefix("file://") {
+                updated.itemPhotoURL = nil
+            }
+        }
+        return updated
+    }
+
+    private func persistPhotoMigrationsIfNeeded(rawItems: [Item]) async {
+        for raw in rawItems {
+            let migrated = Self.migratedPhotoFields(raw)
+            let changed =
+                raw.photoURL != migrated.photoURL
+                || raw.itemPhotoURL != migrated.itemPhotoURL
+                || raw.remotePhotoURL != migrated.remotePhotoURL
+                || raw.remoteItemPhotoURL != migrated.remoteItemPhotoURL
+            if changed {
+                try? await service.updateItem(migrated)
+            }
+        }
     }
 
     // MARK: - Item CRUD
@@ -247,10 +297,8 @@ final class StuffViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
-        for url in [item.photoURL, item.itemPhotoURL].compactMap({ $0 }) {
-            if url.hasPrefix("http") || url.hasPrefix("gs://") {
-                try? await storageService.deletePhoto(url: url)
-            }
+        for url in [item.remotePhotoURL, item.remoteItemPhotoURL].compactMap({ $0 }) {
+            try? await storageService.deletePhoto(url: url)
         }
     }
 
@@ -263,20 +311,13 @@ final class StuffViewModel {
             guard let self else { return }
             guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
             var updated = items[index]
-            // Evict local URL from cache
-            let field = filename == "photo" ? updated.photoURL : updated.itemPhotoURL
-            if let old = field, let url = URL(string: old) {
-                ImageCache.shared.evict(for: url)
-            }
-            // Swap to remote URL
             if filename == "photo" {
-                updated.photoURL = remoteURL
+                updated.remotePhotoURL = remoteURL
             } else {
-                updated.itemPhotoURL = remoteURL
+                updated.remoteItemPhotoURL = remoteURL
             }
             updated.updatedAt = .now
             try? await service.updateItem(updated)
-            // Re-resolve index — item may have been deleted during the await
             guard let freshIndex = items.firstIndex(where: { $0.id == itemId }) else {
                 // updateItem was an upsert; clean up the resurrected doc.
                 try? await service.deleteItem(updated)
@@ -287,58 +328,47 @@ final class StuffViewModel {
     }
 
     func setPhoto(for item: Item, imageData: Data) async {
-        // Bail if item was deleted before this call ran (avoids upsert recreation).
-        guard items.contains(where: { $0.id == item.id }) else { return }
-        guard let compressed = ImageHelper.compress(imageData) else { return }
-        let oldRemote = item.photoURL?.hasPrefix("file") == true ? nil : item.photoURL
-        if let oldURL = item.photoURL, let url = URL(string: oldURL) {
-            ImageCache.shared.evict(for: url)
-        }
-
-        // Save locally — instant
-        let localURL = uploadManager.saveLocally(itemId: item.id, imageData: compressed, filename: "photo")
-        var updated = item
-        updated.photoURL = localURL.absoluteString
-        updated.updatedAt = .now
-        do {
-            try await service.updateItem(updated)
-            // Re-check after await — item may have been deleted during the suspension.
-            guard let index = items.firstIndex(where: { $0.id == updated.id }) else {
-                try? await service.deleteItem(updated)
-                uploadManager.removeLocal(itemId: item.id, filename: "photo")
-                return
-            }
-            items[index] = updated
-            HapticManager.success()
-        } catch {
-            errorMessage = error.localizedDescription
-            return
-        }
-
-        // Queue background upload
-        uploadManager.enqueueUpload(itemId: item.id, filename: "photo", localURL: localURL, oldRemoteURL: oldRemote)
+        await setPhoto(for: item, imageData: imageData, filename: "photo")
     }
 
     func setItemPhoto(for item: Item, imageData: Data) async {
+        await setPhoto(for: item, imageData: imageData, filename: "item_photo")
+    }
+
+    /// Shared photo-write path used by both location and item photos.
+    private func setPhoto(for item: Item, imageData: Data, filename: String) async {
         // Bail if item was deleted before this call ran (avoids upsert recreation).
         guard items.contains(where: { $0.id == item.id }) else { return }
-        guard let compressed = ImageHelper.compress(imageData) else { return }
-        let oldRemote = item.itemPhotoURL?.hasPrefix("file") == true ? nil : item.itemPhotoURL
-        if let oldURL = item.itemPhotoURL, let url = URL(string: oldURL) {
-            ImageCache.shared.evict(for: url)
-        }
+        guard let pair = ImageHelper.compressWithThumbnail(imageData) else { return }
 
-        // Save locally — instant
-        let localURL = uploadManager.saveLocally(itemId: item.id, imageData: compressed, filename: "item_photo")
+        let oldRemote: String? = (filename == "photo") ? item.remotePhotoURL : item.remoteItemPhotoURL
+
+        // Evict any cached entries pointing at the previous local files (so new bytes show).
+        let fullURL = uploadManager.localFullURL(itemId: item.id, filename: filename)
+        let thumbURL = uploadManager.localThumbURL(itemId: item.id, filename: filename)
+        ImageCache.shared.evict(for: fullURL)
+        ImageCache.shared.evict(for: thumbURL)
+
+        // Save locally — instant.
+        let relPath = uploadManager.saveLocally(
+            itemId: item.id,
+            fullData: pair.full,
+            thumbData: pair.thumb,
+            filename: filename
+        )
+
         var updated = item
-        updated.itemPhotoURL = localURL.absoluteString
+        if filename == "photo" {
+            updated.photoURL = relPath
+        } else {
+            updated.itemPhotoURL = relPath
+        }
         updated.updatedAt = .now
         do {
             try await service.updateItem(updated)
-            // Re-check after await — item may have been deleted during the suspension.
             guard let index = items.firstIndex(where: { $0.id == updated.id }) else {
                 try? await service.deleteItem(updated)
-                uploadManager.removeLocal(itemId: item.id, filename: "item_photo")
+                uploadManager.removeLocal(itemId: item.id, filename: filename)
                 return
             }
             items[index] = updated
@@ -348,23 +378,35 @@ final class StuffViewModel {
             return
         }
 
-        // Queue background upload
-        uploadManager.enqueueUpload(itemId: item.id, filename: "item_photo", localURL: localURL, oldRemoteURL: oldRemote)
+        uploadManager.enqueueUpload(itemId: item.id, filename: filename, oldRemoteURL: oldRemote)
     }
 
     func deletePhoto(for item: Item) async {
-        guard let urlString = item.photoURL else { return }
-        if let url = URL(string: urlString) {
-            ImageCache.shared.evict(for: url)
-        }
-        uploadManager.removeLocal(itemId: item.id, filename: "photo")
-        do {
-            if !urlString.hasPrefix("file") {
-                try? await storageService.deletePhoto(url: urlString)
-            }
-            var updated = item
+        await deletePhoto(for: item, filename: "photo")
+    }
+
+    func deleteItemPhoto(for item: Item) async {
+        await deletePhoto(for: item, filename: "item_photo")
+    }
+
+    private func deletePhoto(for item: Item, filename: String) async {
+        let hadLocal = (filename == "photo") ? item.photoURL != nil : item.itemPhotoURL != nil
+        let oldRemote: String? = (filename == "photo") ? item.remotePhotoURL : item.remoteItemPhotoURL
+        guard hadLocal || oldRemote != nil else { return }
+
+        uploadManager.removeLocal(itemId: item.id, filename: filename)
+
+        var updated = item
+        if filename == "photo" {
             updated.photoURL = nil
-            updated.updatedAt = .now
+            updated.remotePhotoURL = nil
+        } else {
+            updated.itemPhotoURL = nil
+            updated.remoteItemPhotoURL = nil
+        }
+        updated.updatedAt = .now
+
+        do {
             try await service.updateItem(updated)
             if let index = items.firstIndex(where: { $0.id == updated.id }) {
                 items[index] = updated
@@ -372,6 +414,10 @@ final class StuffViewModel {
             HapticManager.impact()
         } catch {
             errorMessage = error.localizedDescription
+        }
+
+        if let oldRemote {
+            try? await storageService.deletePhoto(url: oldRemote)
         }
     }
 
@@ -410,7 +456,7 @@ final class StuffViewModel {
     }
 
     func moveItem(_ item: Item, toLocationId: String?) async {
-        var updated = item
+        var updated = items.first(where: { $0.id == item.id }) ?? item
         updated.locationId = toLocationId
         updated.locationChangedAt = .now
         updated.updatedAt = .now
