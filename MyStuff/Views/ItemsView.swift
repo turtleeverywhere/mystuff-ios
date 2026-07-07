@@ -14,6 +14,8 @@ struct ItemsView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isUploading = false
     @AppStorage("itemsViewMode") private var viewMode = "list"
+    @AppStorage("galleryColumns") private var galleryColumns = 2
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isGallery: Bool { viewMode == "gallery" }
 
@@ -36,6 +38,11 @@ struct ItemsView: View {
                         showingAddSheet = true
                     } label: {
                         Image(systemName: "plus")
+                    }
+                }
+                if isGallery && horizontalSizeClass == .regular {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        GalleryColumnSlider()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -194,6 +201,7 @@ struct ItemsView: View {
             ItemGalleryGrid(
                 items: viewModel.filteredItems,
                 kind: .item,
+                columns: horizontalSizeClass == .regular ? galleryColumns : 2,
                 onTap: { editingItem = $0 },
                 onAddPhoto: { item in
                     photoSourceItem = item

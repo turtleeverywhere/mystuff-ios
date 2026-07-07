@@ -18,6 +18,8 @@ struct HomeView: View {
     @State private var filterLocationIds: Set<String> = []
     @State private var showFilters = false
     @AppStorage("homeViewMode") private var viewMode = "list"
+    @AppStorage("galleryColumns") private var galleryColumns = 2
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isGallery: Bool { viewMode == "gallery" }
 
@@ -71,6 +73,11 @@ struct HomeView: View {
                                 .font(.title3)
                                 .symbolRenderingMode(.hierarchical)
                         }
+                    }
+                }
+                if isGallery && horizontalSizeClass == .regular {
+                    ToolbarItem(placement: .primaryAction) {
+                        GalleryColumnSlider()
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -491,6 +498,7 @@ struct HomeView: View {
         ItemGalleryGrid(
             items: items,
             kind: .location,
+            columns: horizontalSizeClass == .regular ? galleryColumns : 2,
             onTap: { detailItem = $0 },
             onAddPhoto: { item in
                 photoSourceItem = item
