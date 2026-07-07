@@ -6,8 +6,14 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var notes: String?
     var locationId: String?
     var categoryId: String?
+    /// Local hint — relative path "Photos/{id}_photo.jpg" or nil. Primary store for location photo.
     var photoURL: String?
+    /// Local hint — relative path "Photos/{id}_item_photo.jpg" or nil. Primary store for item photo.
     var itemPhotoURL: String?
+    /// Firebase Storage URL for location photo (full size). Used for cross-device sync.
+    var remotePhotoURL: String?
+    /// Firebase Storage URL for item photo (full size). Used for cross-device sync.
+    var remoteItemPhotoURL: String?
     var locationChangedAt: Date?
     var nfcTagUID: String?
     var createdAt: Date
@@ -21,6 +27,8 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         categoryId: String? = nil,
         photoURL: String? = nil,
         itemPhotoURL: String? = nil,
+        remotePhotoURL: String? = nil,
+        remoteItemPhotoURL: String? = nil,
         locationChangedAt: Date? = nil,
         nfcTagUID: String? = nil,
         createdAt: Date = .now,
@@ -33,6 +41,8 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.categoryId = categoryId
         self.photoURL = photoURL
         self.itemPhotoURL = itemPhotoURL
+        self.remotePhotoURL = remotePhotoURL
+        self.remoteItemPhotoURL = remoteItemPhotoURL
         self.locationChangedAt = locationChangedAt
         self.nfcTagUID = nfcTagUID
         self.createdAt = createdAt

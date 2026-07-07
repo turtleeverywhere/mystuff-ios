@@ -2,7 +2,9 @@ import Foundation
 import Network
 import UIKit
 
-/// Manages offline-first photo storage: saves locally for instant display, uploads to cloud in background.
+/// Manages offline-first photo storage: full + thumb files saved locally for instant display,
+/// full image uploaded to Firebase Storage in the background for sync. Thumbs are local-only —
+/// other devices generate their own on first remote fetch.
 @MainActor
 final class PhotoUploadManager: @unchecked Sendable {
     static let shared = PhotoUploadManager()
@@ -18,8 +20,7 @@ final class PhotoUploadManager: @unchecked Sendable {
     struct PendingUpload: Codable {
         let itemId: String
         let filename: String      // "photo" or "item_photo"
-        let localPath: String     // relative to localPhotosDir
-        let oldRemoteURL: String? // previous remote URL to delete
+        let oldRemoteURL: String? // previous remote URL to delete after upload
     }
 
     private var pending: [PendingUpload] = []
@@ -33,36 +34,78 @@ final class PhotoUploadManager: @unchecked Sendable {
         startMonitoring()
     }
 
-    // MARK: - Local Storage
+    // MARK: - Path helpers
 
-    /// Saves compressed photo locally and returns the local file URL immediately.
-    func saveLocally(itemId: String, imageData: Data, filename: String) -> URL {
-        let name = "\(itemId)_\(filename).jpg"
-        let fileURL = localPhotosDir.appendingPathComponent(name)
-        try? imageData.write(to: fileURL)
-
-        // Pre-populate image cache so CachedAsyncImage picks it up instantly
-        if let img = UIImage(data: imageData) {
-            ImageCache.shared.setMemory(img, for: fileURL)
-        }
-
-        return fileURL
+    /// Relative path stored on `Item` (e.g. "Photos/abc_photo.jpg").
+    static func relativePath(itemId: String, filename: String) -> String {
+        "Photos/\(itemId)_\(filename).jpg"
     }
 
-    /// Queues a background upload. Call after saving locally + updating the item.
-    func enqueueUpload(itemId: String, filename: String, localURL: URL, oldRemoteURL: String?) {
-        // Remove any existing pending upload for same item+filename
-        pending.removeAll { $0.itemId == itemId && $0.filename == filename }
+    static func relativeThumbPath(itemId: String, filename: String) -> String {
+        "Photos/\(itemId)_\(filename)_thumb.jpg"
+    }
 
-        let upload = PendingUpload(
-            itemId: itemId,
-            filename: filename,
-            localPath: localURL.lastPathComponent,
-            oldRemoteURL: oldRemoteURL
-        )
-        pending.append(upload)
+    /// Resolve a relative photo path against the Documents directory.
+    static func absoluteURL(forRelative path: String) -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent(path)
+    }
+
+    /// Derive the thumbnail path for a given full-size relative path.
+    static func thumbPath(forFullRelative path: String) -> String {
+        guard path.hasSuffix(".jpg") else { return path + "_thumb" }
+        return String(path.dropLast(4)) + "_thumb.jpg"
+    }
+
+    func localFullURL(itemId: String, filename: String) -> URL {
+        localPhotosDir.appendingPathComponent("\(itemId)_\(filename).jpg")
+    }
+
+    func localThumbURL(itemId: String, filename: String) -> URL {
+        localPhotosDir.appendingPathComponent("\(itemId)_\(filename)_thumb.jpg")
+    }
+
+    // MARK: - Local Storage
+
+    /// Saves compressed full + thumb photos locally. Pre-warms image cache. Returns the
+    /// relative path the item should store (e.g. "Photos/abc_photo.jpg").
+    func saveLocally(itemId: String, fullData: Data, thumbData: Data, filename: String) -> String {
+        let fullURL = localFullURL(itemId: itemId, filename: filename)
+        let thumbURL = localThumbURL(itemId: itemId, filename: filename)
+        try? fullData.write(to: fullURL)
+        try? thumbData.write(to: thumbURL)
+
+        // Pre-populate image cache so next render hits memory instantly.
+        if let full = UIImage(data: fullData) {
+            ImageCache.shared.setMemory(full, for: fullURL, maxPixelSize: .infinity)
+        }
+        if let thumb = UIImage(data: thumbData) {
+            ImageCache.shared.setMemory(thumb, for: thumbURL, maxPixelSize: ImageHelper.thumbMaxDimension)
+            // Most common list sizes also benefit from a pre-warm under common keys.
+            for size in [CGFloat(84), 120, 240] {
+                ImageCache.shared.setMemory(thumb, for: thumbURL, maxPixelSize: size)
+            }
+        }
+
+        return Self.relativePath(itemId: itemId, filename: filename)
+    }
+
+    /// Queues a background upload of the full-size photo. Call after saving locally + updating the item.
+    func enqueueUpload(itemId: String, filename: String, oldRemoteURL: String?) {
+        pending.removeAll { $0.itemId == itemId && $0.filename == filename }
+        pending.append(PendingUpload(itemId: itemId, filename: filename, oldRemoteURL: oldRemoteURL))
         savePending()
         Task { await processPending() }
+    }
+
+    // MARK: - Local Cleanup
+
+    /// Remove local full + thumb files for a given item/filename.
+    func removeLocal(itemId: String, filename: String) {
+        try? fileManager.removeItem(at: localFullURL(itemId: itemId, filename: filename))
+        try? fileManager.removeItem(at: localThumbURL(itemId: itemId, filename: filename))
+        pending.removeAll { $0.itemId == itemId && $0.filename == filename }
+        savePending()
     }
 
     // MARK: - Network Monitoring
@@ -82,7 +125,7 @@ final class PhotoUploadManager: @unchecked Sendable {
 
     // MARK: - Upload Processing
 
-    /// Callback set by StuffViewModel to update item URLs after upload.
+    /// Callback fired after the full-size upload completes. ViewModel updates `remotePhotoURL`.
     var onUploadComplete: ((_ itemId: String, _ filename: String, _ remoteURL: String) async -> Void)?
 
     func processPending() async {
@@ -90,14 +133,11 @@ final class PhotoUploadManager: @unchecked Sendable {
         isProcessing = true
         defer { isProcessing = false }
 
-        // Snapshot current pending to iterate
         let toProcess = pending
-
         for upload in toProcess {
-            let localURL = localPhotosDir.appendingPathComponent(upload.localPath)
-            guard let data = try? Data(contentsOf: localURL) else {
-                // File gone, remove from queue
-                pending.removeAll { $0.localPath == upload.localPath }
+            let fullURL = localFullURL(itemId: upload.itemId, filename: upload.filename)
+            guard let data = try? Data(contentsOf: fullURL) else {
+                pending.removeAll { $0.itemId == upload.itemId && $0.filename == upload.filename }
                 savePending()
                 continue
             }
@@ -105,7 +145,6 @@ final class PhotoUploadManager: @unchecked Sendable {
             do {
                 let storageService: StorageService = FirebaseStorageService()
 
-                // Delete old remote photo if replacing
                 if let oldURL = upload.oldRemoteURL {
                     try? await storageService.deletePhoto(url: oldURL)
                 }
@@ -116,27 +155,17 @@ final class PhotoUploadManager: @unchecked Sendable {
                     filename: upload.filename
                 )
 
-                // Update item with remote URL
                 await onUploadComplete?(upload.itemId, upload.filename, remoteURL)
 
-                // Cache the image under the new remote URL too
-                if let img = UIImage(data: data), let url = URL(string: remoteURL) {
-                    ImageCache.shared.setMemory(img, for: url)
-                }
-
-                // Clean up
-                pending.removeAll { $0.localPath == upload.localPath }
+                pending.removeAll { $0.itemId == upload.itemId && $0.filename == upload.filename }
                 savePending()
-
-                // Keep local file for cache but it'll be superseded by remote cache
             } catch {
-                // Network error — stop processing, will retry when connected
+                // Network error — stop processing; retry on next connectivity event.
                 break
             }
         }
     }
 
-    /// Number of pending uploads (for UI indicator if desired)
     var pendingCount: Int { pending.count }
 
     // MARK: - Persistence
@@ -150,14 +179,5 @@ final class PhotoUploadManager: @unchecked Sendable {
     private func savePending() {
         let data = try? JSONEncoder().encode(pending)
         try? data?.write(to: pendingFile)
-    }
-
-    /// Clean up local file when a photo is deleted
-    func removeLocal(itemId: String, filename: String) {
-        let name = "\(itemId)_\(filename).jpg"
-        let fileURL = localPhotosDir.appendingPathComponent(name)
-        try? fileManager.removeItem(at: fileURL)
-        pending.removeAll { $0.itemId == itemId && $0.filename == filename }
-        savePending()
     }
 }

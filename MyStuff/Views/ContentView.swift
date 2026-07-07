@@ -11,12 +11,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Home", systemImage: "house.fill", value: 0) {
-                HomeView(viewModel: viewModel)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            profileButton
-                        }
-                    }
+                HomeView(viewModel: viewModel, onProfileTap: { showingProfile = true })
             }
 
             Tab("Items", systemImage: "shippingbox.fill", value: 1) {
@@ -27,8 +22,10 @@ struct ContentView: View {
                 LocationsView(viewModel: viewModel)
             }
 
-            Tab("NFC", systemImage: "wave.3.right.circle.fill", value: 3) {
-                NFCTabView(viewModel: viewModel)
+            if CoreNFCService.readingAvailable {
+                Tab("NFC", systemImage: "wave.3.right.circle.fill", value: 3) {
+                    NFCTabView(viewModel: viewModel)
+                }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -62,16 +59,6 @@ struct ContentView: View {
             pendingNFCItemId = nil
             deepLinkedItem = item
             HapticManager.success()
-        }
-    }
-
-    private var profileButton: some View {
-        Button {
-            showingProfile = true
-        } label: {
-            Image(systemName: "person.circle.fill")
-                .font(.title3)
-                .symbolRenderingMode(.hierarchical)
         }
     }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Shared image cache with in-memory (NSCache) and on-disk storage.
+/// Shared image cache with in-memory (NSCache, size-aware) and on-disk storage.
+/// Per-size memory entries avoid decoding 1024 px just to draw a 40 pt circle.
 final class ImageCache: @unchecked Sendable {
     static let shared = ImageCache()
 
@@ -12,95 +13,104 @@ final class ImageCache: @unchecked Sendable {
         let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         diskCacheURL = caches.appendingPathComponent("ImageCache", isDirectory: true)
         try? fileManager.createDirectory(at: diskCacheURL, withIntermediateDirectories: true)
-        memoryCache.countLimit = 100
+        // ~64 MB of decoded pixels (cost = w*h*4 bytes).
+        memoryCache.totalCostLimit = 64 * 1024 * 1024
     }
 
-    private func diskURL(for key: String) -> URL {
-        let safe = key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? key
+    // MARK: - Keys
+
+    private func memoryKey(url: URL, maxPixelSize: CGFloat) -> NSString {
+        let sizeTag = maxPixelSize.isFinite ? "\(Int(maxPixelSize))" : "full"
+        return "\(url.absoluteString)@\(sizeTag)" as NSString
+    }
+
+    private func diskURL(for url: URL) -> URL {
+        let safe = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url.absoluteString
         return diskCacheURL.appendingPathComponent(safe)
     }
 
-    func image(for url: URL) async -> UIImage? {
-        let key = url.absoluteString as NSString
+    private func cost(of image: UIImage) -> Int {
+        let cg = image.cgImage
+        let w = cg?.width ?? Int(image.size.width * image.scale)
+        let h = cg?.height ?? Int(image.size.height * image.scale)
+        return max(1, w * h * 4)
+    }
 
-        // 1. Memory
+    private func storeInMemory(_ image: UIImage, key: NSString) {
+        memoryCache.setObject(image, forKey: key, cost: cost(of: image))
+    }
+
+    // MARK: - Fetch
+
+    /// Returns a UIImage for `url`, downsampled to at most `maxPixelSize`. Use `.infinity` for full size.
+    /// If `persistTo` is provided and the source is remote, the downloaded bytes are also written
+    /// to that path (used to lazily migrate remote photos into the on-device primary store).
+    func image(for url: URL, maxPixelSize: CGFloat, persistTo: URL? = nil) async -> UIImage? {
+        let key = memoryKey(url: url, maxPixelSize: maxPixelSize)
+
         if let cached = memoryCache.object(forKey: key) {
             return cached
         }
 
-        // 2. Local file URL — read directly
-        if url.isFileURL {
-            if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
-                memoryCache.setObject(img, forKey: key)
+        return await Task.detached(priority: .userInitiated) { [self] () -> UIImage? in
+            // 1. Local file — read + downsample directly.
+            if url.isFileURL {
+                guard fileManager.fileExists(atPath: url.path) else { return nil }
+                let img: UIImage?
+                if maxPixelSize.isFinite {
+                    img = ImageDownsampler.downsample(url: url, maxPixelSize: maxPixelSize)
+                } else if let data = try? Data(contentsOf: url) {
+                    img = UIImage(data: data)
+                } else {
+                    img = nil
+                }
+                if let img { self.storeInMemory(img, key: key) }
                 return img
             }
-            return nil
-        }
 
-        // 3. Disk cache
-        let disk = diskURL(for: url.absoluteString)
-        if let data = try? Data(contentsOf: disk), let img = UIImage(data: data) {
-            memoryCache.setObject(img, forKey: key)
+            // 2. Disk cache (raw bytes).
+            let disk = diskURL(for: url)
+            if let data = try? Data(contentsOf: disk) {
+                let img = maxPixelSize.isFinite
+                    ? ImageDownsampler.downsample(data: data, maxPixelSize: maxPixelSize)
+                    : UIImage(data: data)
+                if let img {
+                    self.storeInMemory(img, key: key)
+                    return img
+                }
+            }
+
+            // 3. Network.
+            guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+            try? data.write(to: disk)
+            if let persistTo {
+                try? fileManager.createDirectory(at: persistTo.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: persistTo)
+            }
+            let img = maxPixelSize.isFinite
+                ? ImageDownsampler.downsample(data: data, maxPixelSize: maxPixelSize)
+                : UIImage(data: data)
+            if let img { self.storeInMemory(img, key: key) }
             return img
-        }
-
-        // 4. Network
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
-              let img = UIImage(data: data) else {
-            return nil
-        }
-        memoryCache.setObject(img, forKey: key)
-        try? data.write(to: disk)
-        return img
+        }.value
     }
 
-    /// Pre-populate memory cache (used for instant display of locally-saved photos).
-    func setMemory(_ image: UIImage, for url: URL) {
-        let key = url.absoluteString as NSString
-        memoryCache.setObject(image, forKey: key)
+    // MARK: - Memory hints
+
+    /// Pre-populate the memory cache for a freshly-captured image so the next display hits memory instantly.
+    func setMemory(_ image: UIImage, for url: URL, maxPixelSize: CGFloat) {
+        storeInMemory(image, key: memoryKey(url: url, maxPixelSize: maxPixelSize))
     }
 
+    /// Evict all entries (every cached size) for a given URL, plus the disk-cache file.
     func evict(for url: URL) {
-        let key = url.absoluteString as NSString
-        memoryCache.removeObject(forKey: key)
+        // NSCache has no enumeration; we wipe known size tags and the disk entry.
+        // Memory entries for unknown sizes will simply age out via cost limit.
+        for tag in ["full", "84", "120", "240", "300", "900"] {
+            memoryCache.removeObject(forKey: "\(url.absoluteString)@\(tag)" as NSString)
+        }
         if !url.isFileURL {
-            try? fileManager.removeItem(at: diskURL(for: url.absoluteString))
-        }
-    }
-}
-
-/// Drop-in replacement for AsyncImage that uses the shared disk+memory cache.
-struct CachedAsyncImage: View {
-    let url: URL?
-    let content: (Image) -> AnyView
-    let placeholder: () -> AnyView
-
-    @State private var uiImage: UIImage?
-
-    init<C: View, P: View>(
-        url: URL?,
-        @ViewBuilder content: @escaping (Image) -> C,
-        @ViewBuilder placeholder: @escaping () -> P
-    ) {
-        self.url = url
-        self.content = { AnyView(content($0)) }
-        self.placeholder = { AnyView(placeholder()) }
-    }
-
-    var body: some View {
-        Group {
-            if let uiImage {
-                content(Image(uiImage: uiImage))
-            } else {
-                placeholder()
-            }
-        }
-        .task(id: url) {
-            guard let url else {
-                uiImage = nil
-                return
-            }
-            uiImage = await ImageCache.shared.image(for: url)
+            try? fileManager.removeItem(at: diskURL(for: url))
         }
     }
 }

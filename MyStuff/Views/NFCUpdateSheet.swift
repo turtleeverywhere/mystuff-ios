@@ -125,9 +125,9 @@ struct NFCUpdateSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        } else if let urlString = item.photoURL, let url = URL(string: urlString) {
+        } else if item.hasLocationPhoto {
             HStack {
-                CachedAsyncImage(url: url) { image in
+                PhotoView(item: item, kind: .location, size: .thumbnail(240)) { image in
                     image
                         .resizable()
                         .scaledToFill()

@@ -66,7 +66,10 @@ protocol NFCService: AnyObject, Sendable {
 
 final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
 
-    var isAvailable: Bool { NFCTagReaderSession.readingAvailable }
+    /// Device-level NFC capability; false on iPad and other NFC-less devices.
+    static var readingAvailable: Bool { NFCTagReaderSession.readingAvailable }
+
+    var isAvailable: Bool { Self.readingAvailable }
 
     private enum Mode {
         case read

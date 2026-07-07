@@ -100,8 +100,8 @@ struct ItemDetailSheet: View {
     private var photoSection: some View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
 
-        if let photoURL = liveItem.photoURL, let url = URL(string: photoURL) {
-            CachedAsyncImage(url: url) { image in
+        if liveItem.hasLocationPhoto {
+            PhotoView(item: liveItem, kind: .location, size: .full) { image in
                 image
                     .resizable()
                     .scaledToFill()
