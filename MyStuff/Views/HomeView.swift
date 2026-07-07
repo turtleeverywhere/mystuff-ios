@@ -94,7 +94,6 @@ struct HomeView: View {
                         }
                     }
                 )
-                .presentationDetents([.medium])
             }
             .sheet(item: $detailItem) { item in
                 ItemDetailSheet(item: item, viewModel: viewModel)
@@ -643,8 +642,18 @@ struct MoveItemSheet: View {
     let viewModel: StuffViewModel
     let onMove: (String?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
+        // Detents are ignored in regular width (iPad form sheet); use page sizing there instead.
+        if horizontalSizeClass == .regular {
+            content.presentationSizing(.page)
+        } else {
+            content.presentationDetents([.medium])
+        }
+    }
+
+    private var content: some View {
         NavigationStack {
             List {
                 Section("Move \"\(item.name)\" to…") {

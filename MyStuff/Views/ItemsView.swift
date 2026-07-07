@@ -103,7 +103,6 @@ struct ItemsView: View {
                         Task { await viewModel.moveItem(item, toLocationId: locationId) }
                     }
                 )
-                .presentationDetents([.medium])
             }
             .sheet(item: $previewItem) { item in
                 ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
