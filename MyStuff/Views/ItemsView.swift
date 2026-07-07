@@ -5,6 +5,7 @@ struct ItemsView: View {
     @Bindable var viewModel: StuffViewModel
     @State private var showingAddSheet = false
     @State private var editingItem: Item?
+    @State private var movingItem: Item?
     @State private var photoSourceItem: Item?
     @State private var showPhotoSource = false
     @State private var previewItem: Item?
@@ -12,12 +13,17 @@ struct ItemsView: View {
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isUploading = false
+    @AppStorage("itemsViewMode") private var viewMode = "list"
+
+    private var isGallery: Bool { viewMode == "gallery" }
 
     var body: some View {
         NavigationStack {
             Group {
                 if viewModel.items.isEmpty {
                     emptyState
+                } else if isGallery {
+                    itemsGallery
                 } else {
                     itemsList
                 }
@@ -30,6 +36,13 @@ struct ItemsView: View {
                         showingAddSheet = true
                     } label: {
                         Image(systemName: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation { viewMode = isGallery ? "list" : "gallery" }
+                    } label: {
+                        Image(systemName: isGallery ? "list.bullet" : "square.grid.2x2")
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
@@ -81,6 +94,16 @@ struct ItemsView: View {
                         }
                     }
                 )
+            }
+            .sheet(item: $movingItem) { item in
+                MoveItemSheet(
+                    item: item,
+                    viewModel: viewModel,
+                    onMove: { locationId in
+                        Task { await viewModel.moveItem(item, toLocationId: locationId) }
+                    }
+                )
+                .presentationDetents([.medium])
             }
             .sheet(item: $previewItem) { item in
                 ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
@@ -158,7 +181,70 @@ struct ItemsView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+                .contextMenu {
+                    Button {
+                        movingItem = item
+                    } label: {
+                        Label("Move to Location", systemImage: "arrow.right.circle")
+                    }
+                    Button {
+                        editingItem = item
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    Button {
+                        photoSourceItem = item
+                        showPhotoSource = true
+                    } label: {
+                        Label("Change Photo", systemImage: "camera")
+                    }
+                    Button(role: .destructive) {
+                        Task { await viewModel.deleteItem(item) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
+        }
+    }
+
+    // MARK: - Items Gallery
+
+    private var itemsGallery: some View {
+        ScrollView {
+            ItemGalleryGrid(
+                items: viewModel.filteredItems,
+                kind: .item,
+                onTap: { editingItem = $0 },
+                onAddPhoto: { item in
+                    photoSourceItem = item
+                    showPhotoSource = true
+                },
+                tileMenu: { item in
+                    Button {
+                        movingItem = item
+                    } label: {
+                        Label("Move to Location", systemImage: "arrow.right.circle")
+                    }
+                    Button {
+                        editingItem = item
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    Button {
+                        photoSourceItem = item
+                        showPhotoSource = true
+                    } label: {
+                        Label("Change Photo", systemImage: "camera")
+                    }
+                    Button(role: .destructive) {
+                        Task { await viewModel.deleteItem(item) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            )
+            .padding()
         }
     }
 
@@ -167,8 +253,8 @@ struct ItemsView: View {
     @ViewBuilder
     private func itemPhotoCircle(_ item: Item) -> some View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
-            CachedAsyncImage(url: url) { image in
+        if liveItem.hasItemPhoto {
+            PhotoView(item: liveItem, kind: .item, size: .thumbnail(120)) { image in
                 image
                     .resizable()
                     .scaledToFill()
@@ -179,10 +265,6 @@ struct ItemsView: View {
             }
             .onTapGesture {
                 previewItem = liveItem
-            }
-            .onLongPressGesture {
-                photoSourceItem = liveItem
-                showPhotoSource = true
             }
         } else {
             photoPlaceholderCircle
@@ -265,8 +347,8 @@ struct ItemPhotoPreviewSheet: View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
         NavigationStack {
             Group {
-                if let photoURL = liveItem.itemPhotoURL, let url = URL(string: photoURL) {
-                    CachedAsyncImage(url: url) { image in
+                if liveItem.hasItemPhoto {
+                    PhotoView(item: liveItem, kind: .item, size: .full) { image in
                         image
                             .resizable()
                             .scaledToFit()
@@ -359,9 +441,9 @@ struct ItemFormSheet: View {
                                 Image(systemName: "trash")
                             }
                         }
-                    } else if let existingURL = item?.itemPhotoURL, !existingURL.isEmpty {
+                    } else if let item, item.hasItemPhoto {
                         HStack {
-                            CachedAsyncImage(url: URL(string: existingURL)) { image in
+                            PhotoView(item: item, kind: .item, size: .thumbnail(240)) { image in
                                 image
                                     .resizable()
                                     .scaledToFill()
@@ -382,7 +464,7 @@ struct ItemFormSheet: View {
                         photoTarget = .item
                         showPhotoSource = true
                     } label: {
-                        Label(photoData != nil || item?.itemPhotoURL != nil ? "Change Photo" : "Add Photo", systemImage: "camera")
+                        Label(photoData != nil || (item?.hasItemPhoto ?? false) ? "Change Photo" : "Add Photo", systemImage: "camera")
                     }
                 }
 
@@ -406,9 +488,9 @@ struct ItemFormSheet: View {
                                     Image(systemName: "trash")
                                 }
                             }
-                        } else if let existingURL = item?.photoURL, !existingURL.isEmpty {
+                        } else if let item, item.hasLocationPhoto {
                             HStack {
-                                CachedAsyncImage(url: URL(string: existingURL)) { image in
+                                PhotoView(item: item, kind: .location, size: .thumbnail(240)) { image in
                                     image
                                         .resizable()
                                         .scaledToFill()
@@ -429,7 +511,7 @@ struct ItemFormSheet: View {
                             photoTarget = .location
                             showPhotoSource = true
                         } label: {
-                            Label(locationPhotoData != nil || item?.photoURL != nil ? "Change Photo" : "Add Photo", systemImage: "camera")
+                            Label(locationPhotoData != nil || (item?.hasLocationPhoto ?? false) ? "Change Photo" : "Add Photo", systemImage: "camera")
                         }
                     }
                 }
