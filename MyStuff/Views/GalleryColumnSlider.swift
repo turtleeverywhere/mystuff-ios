@@ -17,5 +17,11 @@ struct GalleryColumnSlider: View {
         )
         .frame(width: 140)
         .accessibilityLabel("Gallery columns")
+        .accessibilityValue("\(galleryColumns) columns")
     }
+}
+
+#Preview {
+    GalleryColumnSlider()
+        .padding()
 }

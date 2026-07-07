@@ -5,7 +5,7 @@ enum GalleryPhotoKind {
     case item, location
 }
 
-/// Two-column photo grid used by the Home and Items gallery modes.
+/// Photo grid with configurable column count, used by the Home and Items gallery modes.
 struct ItemGalleryGrid<TileMenu: View>: View {
     let items: [Item]
     let kind: GalleryPhotoKind
