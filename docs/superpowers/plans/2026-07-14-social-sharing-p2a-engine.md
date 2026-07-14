@@ -325,6 +325,126 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
+### Task 4: Self-healing own-doc backfill before the collectionGroup read
+
+**Files:**
+- Modify: `MyStuff/Services/DataService.swift`
+- Modify: `MyStuff/Services/FirebaseDataService.swift`
+- Modify: `MyStuff/Services/MockDataService.swift`
+- Modify: `MyStuff/ViewModels/StuffViewModel.swift`
+
+**Why:** The Task-1 collectionGroup query `whereField("memberIds", arrayContains: uid)` only returns docs that actually have a `memberIds` array stored in Firestore. The P0 backfill populated that field via the *old* per-user read — but if a device runs a build with the Task-1 read switch before that backfill ever ran (P0/P1 behavioral gates were deferred), its own un-migrated docs are invisible to the query and can never be seen to migrate them (chicken-and-egg). This task makes the app self-heal: a one-time per-owner read of the user's own subcollection stamps `ownerId`/`memberIds` before the collectionGroup fetch, independent of prior build history. Runs once per uid (guarded by a `UserDefaults` flag).
+
+**Interfaces:**
+- Produces:
+  - `DataService.fetchOwnItems() async throws -> [Item]` and `fetchOwnLocations() async throws -> [Location]` — read the current user's own subcollection directly (the pre-P2a path).
+  - `StuffViewModel.backfillOwnSharingFieldsIfNeeded(currentUid:)` — one-time own-doc backfill, called in `loadData` before the collectionGroup server fetch.
+
+- [ ] **Step 1: Add the two methods to the `DataService` protocol**
+
+In `MyStuff/Services/DataService.swift`, add to the `protocol DataService` body, right after the `currentUserId` requirement (before `// MARK: - Items`):
+
+```swift
+    /// Read the current user's OWN items subcollection directly (pre-sharing path).
+    /// Used once to backfill `memberIds`/`ownerId` before the collectionGroup read.
+    func fetchOwnItems() async throws -> [Item]
+    /// Read the current user's OWN locations subcollection directly.
+    func fetchOwnLocations() async throws -> [Location]
+```
+
+- [ ] **Step 2: Implement them in `FirebaseDataService`**
+
+In `MyStuff/Services/FirebaseDataService.swift`, add after `fetchItems`/`fetchLocations` (the collectionGroup versions):
+
+```swift
+    func fetchOwnItems() async throws -> [Item] {
+        let snapshot = try await itemsCollection(owner: uid)
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: .server)
+        return try snapshot.documents.map { try $0.data(as: Item.self) }
+    }
+
+    func fetchOwnLocations() async throws -> [Location] {
+        let snapshot = try await locationsCollection(owner: uid)
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: .server)
+        return try snapshot.documents.map { try $0.data(as: Location.self) }
+    }
+```
+
+- [ ] **Step 3: Implement them in `MockDataService`**
+
+In `MyStuff/Services/MockDataService.swift`, add (near the other fetch methods):
+
+```swift
+    func fetchOwnItems() async throws -> [Item] { items }
+    func fetchOwnLocations() async throws -> [Location] { locations }
+```
+
+- [ ] **Step 4: Add the backfill method to `StuffViewModel` and call it in `loadData`**
+
+In `MyStuff/ViewModels/StuffViewModel.swift`, add this method just after `persistSharingMigrationsIfNeeded(rawItems:rawLocations:currentUid:)`:
+
+```swift
+    /// One-time-per-user backfill of `ownerId`/`memberIds` on the user's OWN docs, read via
+    /// the pre-sharing per-owner path. Guarantees own docs carry `memberIds` so the
+    /// collectionGroup `arrayContains` read returns them. Guarded by a UserDefaults flag.
+    private func backfillOwnSharingFieldsIfNeeded(currentUid: String) async {
+        guard !currentUid.isEmpty else { return }
+        let key = "sharingBackfillDone_\(currentUid)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            let ownItems = try await service.fetchOwnItems()
+            for raw in ownItems {
+                let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+                if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                    try? await service.updateItem(migrated)
+                }
+            }
+            let ownLocations = try await service.fetchOwnLocations()
+            for raw in ownLocations {
+                let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+                if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                    try? await service.updateLocation(migrated)
+                }
+            }
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            // Leave the flag unset so we retry on the next launch.
+        }
+    }
+```
+
+Then call it in `loadData()` in the Stage-2 `do` block, immediately after `let currentUid = service.currentUserId` and **before** the `async let serverItems = …` collectionGroup fetch. The start of the `do` block becomes:
+
+```swift
+        do {
+            let currentUid = service.currentUserId
+            await backfillOwnSharingFieldsIfNeeded(currentUid: currentUid)
+            async let serverItems = service.fetchItems(source: .server)
+```
+
+> `migratedSharingFields` and `persistSharingMigrationsIfNeeded` already exist from P0; this reuses `migratedSharingFields`. The P0 `persistSharingMigrationsIfNeeded` (which runs on the collectionGroup result) stays — it's now redundant for own docs but harmless (its diff-guard suppresses no-op writes).
+
+- [ ] **Step 5: Build to verify**
+
+Run: `xcodebuild -project MyStuff.xcodeproj -scheme MyStuff -destination 'generic/platform=iOS Simulator' -configuration Debug build 2>&1 | tail -20`
+Expected: `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add MyStuff/Services/DataService.swift MyStuff/Services/FirebaseDataService.swift MyStuff/Services/MockDataService.swift MyStuff/ViewModels/StuffViewModel.swift
+git commit -m "fix: self-heal own-doc memberIds backfill before collectionGroup read
+
+Closes the chicken-and-egg where a device running the collectionGroup read
+switch before the P0 backfill ran would never see its own un-migrated docs.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage (P2a slice):**
