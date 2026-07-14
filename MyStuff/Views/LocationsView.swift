@@ -3,12 +3,14 @@ import SwiftUI
 struct LocationsView: View {
     @Bindable var viewModel: StuffViewModel
     @State private var showingAddSheet = false
-    @State private var editingLocation: Location?
     @State private var locationToDelete: Location?
     @State private var expandedIds: Set<String> = []
+    @State private var path: [Location] = []
+    @State private var showingScanner = false
+    @State private var addingSublocationParent: Location?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if viewModel.locations.isEmpty {
                     emptyState
@@ -17,12 +19,24 @@ struct LocationsView: View {
                 }
             }
             .navigationTitle("Locations")
+            .navigationDestination(for: Location.self) { loc in
+                LocationDetailView(location: loc, viewModel: viewModel)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingAddSheet = true
                     } label: {
                         Image(systemName: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    if QRScannerView.isSupported {
+                        Button {
+                            showingScanner = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                        }
                     }
                 }
             }
@@ -34,16 +48,20 @@ struct LocationsView: View {
                     }
                 )
             }
-            .sheet(item: $editingLocation) { location in
+            .sheet(isPresented: $showingScanner) {
+                QRScannerSheet { locationId in
+                    if let loc = viewModel.locations.first(where: { $0.id == locationId }) {
+                        path.append(loc)
+                    }
+                }
+            }
+            .sheet(item: $addingSublocationParent) { parent in
                 LocationFormSheet(
-                    location: location,
+                    initialParentId: parent.id,
                     viewModel: viewModel,
                     onSave: { name, emoji, parentId in
-                        var updated = location
-                        updated.name = name
-                        updated.emoji = emoji
-                        updated.parentId = parentId
-                        Task { await viewModel.updateLocation(updated) }
+                        Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
+                        if let parentId { expandedIds.insert(parentId) }
                     }
                 )
             }
@@ -118,10 +136,8 @@ struct LocationsView: View {
                         Spacer().frame(width: 24)
                     }
 
-                    // Location label
-                    Button {
-                        editingLocation = entry.location
-                    } label: {
+                    // Location label -> detail
+                    NavigationLink(value: entry.location) {
                         HStack {
                             Text(entry.location.emoji ?? "📍")
                                 .font(.title2)
@@ -138,7 +154,13 @@ struct LocationsView: View {
                         }
                         .padding(.vertical, 4)
                     }
-                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            addingSublocationParent = entry.location
+                        } label: {
+                            Label("Add Sub-location", systemImage: "plus")
+                        }
+                    }
                 }
                 .padding(.leading, CGFloat(entry.depth) * 24)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -183,13 +205,15 @@ struct LocationFormSheet: View {
     private static let noParentSentinel = "__none__"
     private let popularEmojis = ["🏠", "🚗", "📦", "🏢", "🛋️", "🖥️", "🚙", "🏠", "🔧", "🏕️", "🎒", "🗄️"]
 
-    init(location: Location? = nil, viewModel: StuffViewModel, onSave: @escaping (String, String?, String?) -> Void) {
+    /// `initialParentId` pre-selects a parent when creating a NEW location
+    /// (e.g. "Add Sub-location" from a long-press); ignored when editing.
+    init(location: Location? = nil, initialParentId: String? = nil, viewModel: StuffViewModel, onSave: @escaping (String, String?, String?) -> Void) {
         self.location = location
         self.viewModel = viewModel
         self.onSave = onSave
         _name = State(initialValue: location?.name ?? "")
         _emoji = State(initialValue: location?.emoji ?? "")
-        _selectedParentId = State(initialValue: location?.parentId ?? Self.noParentSentinel)
+        _selectedParentId = State(initialValue: location?.parentId ?? initialParentId ?? Self.noParentSentinel)
     }
 
     var body: some View {

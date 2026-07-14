@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var showingProfile = false
     @State private var pendingNFCItemId: String?
     @State private var deepLinkedItem: Item?
+    @State private var pendingLocationId: String?
+    @State private var deepLinkedLocation: Location?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -40,24 +42,43 @@ struct ContentView: View {
         .sheet(item: $deepLinkedItem) { item in
             NFCUpdateSheet(item: item, viewModel: viewModel)
         }
+        .sheet(item: $deepLinkedLocation) { location in
+            NavigationStack {
+                LocationDetailView(location: location, viewModel: viewModel)
+            }
+        }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             if let url = activity.webpageURL { handleDeepLink(url) }
         }
         .onOpenURL { url in handleDeepLink(url) }
         .onChange(of: viewModel.items) { resolvePendingDeepLink() }
+        .onChange(of: viewModel.locations) { resolvePendingDeepLink() }
         .onChange(of: pendingNFCItemId) { resolvePendingDeepLink() }
+        .onChange(of: pendingLocationId) { resolvePendingDeepLink() }
     }
 
     private func handleDeepLink(_ url: URL) {
-        guard let id = NFCLink.itemId(from: url) else { return }
-        pendingNFCItemId = id
+        switch AppLink.parse(url) {
+        case .item(let id):
+            pendingNFCItemId = id
+        case .location(let id):
+            pendingLocationId = id
+        case nil:
+            break
+        }
     }
 
     private func resolvePendingDeepLink() {
-        guard let id = pendingNFCItemId else { return }
-        if let item = viewModel.items.first(where: { $0.id == id }) {
+        if let id = pendingNFCItemId,
+           let item = viewModel.items.first(where: { $0.id == id }) {
             pendingNFCItemId = nil
             deepLinkedItem = item
+            HapticManager.success()
+        }
+        if let id = pendingLocationId,
+           let location = viewModel.locations.first(where: { $0.id == id }) {
+            pendingLocationId = nil
+            deepLinkedLocation = location
             HapticManager.success()
         }
     }
