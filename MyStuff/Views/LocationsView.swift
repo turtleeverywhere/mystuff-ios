@@ -136,8 +136,13 @@ struct LocationsView: View {
                         Spacer().frame(width: 24)
                     }
 
-                    // Location label -> detail
-                    NavigationLink(value: entry.location) {
+                    // Location label -> detail. A plain Button with programmatic
+                    // navigation (not a row-level NavigationLink) so the leading
+                    // chevron stays tappable and long-press opens the context menu
+                    // on iPad — a NavigationLink swallows both there.
+                    Button {
+                        path.append(entry.location)
+                    } label: {
                         HStack {
                             Text(entry.location.emoji ?? "📍")
                                 .font(.title2)
@@ -153,13 +158,15 @@ struct LocationsView: View {
                                 .background(.ultraThinMaterial, in: Capsule())
                         }
                         .padding(.vertical, 4)
+                        .contentShape(Rectangle())
                     }
-                    .contextMenu {
-                        Button {
-                            addingSublocationParent = entry.location
-                        } label: {
-                            Label("Add Sub-location", systemImage: "plus")
-                        }
+                    .buttonStyle(.plain)
+                }
+                .contextMenu {
+                    Button {
+                        addingSublocationParent = entry.location
+                    } label: {
+                        Label("Add Sub-location", systemImage: "plus")
                     }
                 }
                 .padding(.leading, CGFloat(entry.depth) * 24)
