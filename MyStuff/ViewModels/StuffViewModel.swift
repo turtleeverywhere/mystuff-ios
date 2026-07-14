@@ -559,6 +559,109 @@ final class StuffViewModel {
         }
     }
 
+    // MARK: - Sharing
+
+    /// Current signed-in uid, surfaced for views/badges.
+    var currentUserId: String { service.currentUserId }
+
+    /// Members an entity is shared with (everyone except its owner).
+    func sharedMembers(of item: Item) -> [String] {
+        item.members.filter { $0 != (item.ownerId ?? currentUserId) }
+    }
+    func sharedMembers(of location: Location) -> [String] {
+        location.members.filter { $0 != (location.ownerId ?? currentUserId) }
+    }
+
+    func isShared(_ item: Item) -> Bool { !sharedMembers(of: item).isEmpty }
+    func isShared(_ location: Location) -> Bool { !sharedMembers(of: location).isEmpty }
+
+    /// True if this entity is owned by someone else (i.e. shared *with* me).
+    func isSharedWithMe(_ item: Item) -> Bool { (item.ownerId ?? currentUserId) != currentUserId }
+    func isSharedWithMe(_ location: Location) -> Bool { (location.ownerId ?? currentUserId) != currentUserId }
+
+    /// Member uids of an item that are NOT members of `location` — i.e. who would lose
+    /// visibility of the item's location if the item moved there. Drives the move/share dialog.
+    func membersMissing(from location: Location, forItemMembers itemMembers: [String]) -> [String] {
+        let locMembers = Set(location.members)
+        return itemMembers.filter { !locMembers.contains($0) }
+    }
+
+    func shareItem(_ item: Item, withFriend friendUid: String) async {
+        guard var updated = items.first(where: { $0.id == item.id }) else { return }
+        guard !updated.members.contains(friendUid) else { return }
+        updated.memberIds = updated.members + [friendUid]
+        await persistItemMembers(updated)
+    }
+
+    func unshareItem(_ item: Item, fromFriend friendUid: String) async {
+        guard var updated = items.first(where: { $0.id == item.id }) else { return }
+        updated.memberIds = updated.members.filter { $0 != friendUid }
+        await persistItemMembers(updated)
+    }
+
+    /// Reset an item to private: members become exactly `[owner]`.
+    func makeItemPrivate(_ item: Item) async {
+        guard var updated = items.first(where: { $0.id == item.id }) else { return }
+        updated.memberIds = [updated.ownerId ?? currentUserId]
+        await persistItemMembers(updated)
+    }
+
+    func shareLocation(_ location: Location, withFriend friendUid: String) async {
+        guard var updated = locations.first(where: { $0.id == location.id }) else { return }
+        guard !updated.members.contains(friendUid) else { return }
+        updated.memberIds = updated.members + [friendUid]
+        await persistLocationMembers(updated)
+    }
+
+    func unshareLocation(_ location: Location, fromFriend friendUid: String) async {
+        guard var updated = locations.first(where: { $0.id == location.id }) else { return }
+        updated.memberIds = updated.members.filter { $0 != friendUid }
+        await persistLocationMembers(updated)
+    }
+
+    /// Add member uids to a location (union). Used to resolve a move/share conflict by
+    /// sharing the destination location with the item's members.
+    func addMembers(_ uids: [String], toLocation location: Location) async {
+        guard var updated = locations.first(where: { $0.id == location.id }) else { return }
+        var members = updated.members
+        for uid in uids where !members.contains(uid) { members.append(uid) }
+        updated.memberIds = members
+        await persistLocationMembers(updated)
+    }
+
+    /// Persist a membership change on an item. If the change removed *me* from the members,
+    /// drop it from local state (it will no longer be returned by my collectionGroup query).
+    private func persistItemMembers(_ item: Item) async {
+        var updated = item
+        updated.updatedAt = .now
+        do {
+            try await service.updateItem(updated)
+            if updated.members.contains(currentUserId) {
+                if let i = items.firstIndex(where: { $0.id == updated.id }) { items[i] = updated }
+            } else {
+                items.removeAll { $0.id == updated.id }
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistLocationMembers(_ location: Location) async {
+        var updated = location
+        do {
+            try await service.updateLocation(updated)
+            if updated.members.contains(currentUserId) {
+                if let i = locations.firstIndex(where: { $0.id == updated.id }) { locations[i] = updated }
+            } else {
+                locations.removeAll { $0.id == updated.id }
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Category CRUD
 
     @discardableResult
