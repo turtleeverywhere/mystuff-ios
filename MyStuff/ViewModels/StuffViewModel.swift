@@ -662,6 +662,33 @@ final class StuffViewModel {
         }
     }
 
+    /// On unfriend: remove the pair from every shared entity in the loaded set, in both
+    /// directions — strip the friend from things I own, and strip me from things they own
+    /// (allowed because a member may update, per security rules).
+    func unshareEverything(withFriend friendUid: String) async {
+        let me = currentUserId
+        for item in items {
+            let owner = item.ownerId ?? me
+            if owner == me, item.members.contains(friendUid) {
+                var u = item; u.memberIds = item.members.filter { $0 != friendUid }
+                await persistItemMembers(u)
+            } else if owner == friendUid, item.members.contains(me) {
+                var u = item; u.memberIds = item.members.filter { $0 != me }
+                await persistItemMembers(u)
+            }
+        }
+        for location in locations {
+            let owner = location.ownerId ?? me
+            if owner == me, location.members.contains(friendUid) {
+                var u = location; u.memberIds = location.members.filter { $0 != friendUid }
+                await persistLocationMembers(u)
+            } else if owner == friendUid, location.members.contains(me) {
+                var u = location; u.memberIds = location.members.filter { $0 != me }
+                await persistLocationMembers(u)
+            }
+        }
+    }
+
     // MARK: - Category CRUD
 
     @discardableResult

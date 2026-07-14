@@ -37,6 +37,9 @@ struct ContentView: View {
             await viewModel.loadData()
         }
         .task {
+            social.onUnfriend = { friendUid in
+                await viewModel.unshareEverything(withFriend: friendUid)
+            }
             await social.load()
         }
         .sheet(isPresented: $showingProfile) {

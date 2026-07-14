@@ -17,6 +17,9 @@ final class SocialViewModel {
 
     private let service: SocialService = FirebaseSocialService()
 
+    /// Set by ContentView: called on unfriend to strip shared memberIds between the two users.
+    var onUnfriend: ((String) async -> Void)?
+
     var incomingPendingCount: Int { incomingRequests.count }
 
     // MARK: - Load
@@ -150,6 +153,7 @@ final class SocialViewModel {
 
     func removeFriend(_ friend: Friend) async {
         do {
+            await onUnfriend?(friend.uid)
             try await service.removeFriend(uid: friend.uid)
             friends.removeAll { $0.uid == friend.uid }
             HapticManager.impact()
