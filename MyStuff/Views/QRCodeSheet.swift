@@ -119,6 +119,13 @@ struct QRCodeSheet: View {
         let controller = UIPrintInteractionController.shared
         controller.printInfo = info
         controller.printingItem = data
-        controller.present(animated: true, completionHandler: nil)
+        if let window = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow }) {
+            controller.present(from: window.bounds, in: window, animated: true, completionHandler: nil)
+        } else {
+            controller.present(animated: true, completionHandler: nil)
+        }
     }
 }
