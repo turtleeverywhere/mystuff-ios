@@ -3,12 +3,12 @@ import SwiftUI
 struct LocationsView: View {
     @Bindable var viewModel: StuffViewModel
     @State private var showingAddSheet = false
-    @State private var editingLocation: Location?
     @State private var locationToDelete: Location?
     @State private var expandedIds: Set<String> = []
+    @State private var path: [Location] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if viewModel.locations.isEmpty {
                     emptyState
@@ -17,6 +17,9 @@ struct LocationsView: View {
                 }
             }
             .navigationTitle("Locations")
+            .navigationDestination(for: Location.self) { loc in
+                LocationDetailView(location: loc, viewModel: viewModel)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -31,19 +34,6 @@ struct LocationsView: View {
                     viewModel: viewModel,
                     onSave: { name, emoji, parentId in
                         Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
-                    }
-                )
-            }
-            .sheet(item: $editingLocation) { location in
-                LocationFormSheet(
-                    location: location,
-                    viewModel: viewModel,
-                    onSave: { name, emoji, parentId in
-                        var updated = location
-                        updated.name = name
-                        updated.emoji = emoji
-                        updated.parentId = parentId
-                        Task { await viewModel.updateLocation(updated) }
                     }
                 )
             }
@@ -118,10 +108,8 @@ struct LocationsView: View {
                         Spacer().frame(width: 24)
                     }
 
-                    // Location label
-                    Button {
-                        editingLocation = entry.location
-                    } label: {
+                    // Location label -> detail
+                    NavigationLink(value: entry.location) {
                         HStack {
                             Text(entry.location.emoji ?? "📍")
                                 .font(.title2)
@@ -138,7 +126,6 @@ struct LocationsView: View {
                         }
                         .padding(.vertical, 4)
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.leading, CGFloat(entry.depth) * 24)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
