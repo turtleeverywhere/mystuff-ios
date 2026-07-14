@@ -16,6 +16,10 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var remoteItemPhotoURL: String?
     var locationChangedAt: Date?
     var nfcTagUID: String?
+    /// Owner's uid. Writes route to `users/{ownerId}/items`. nil on legacy docs until migrated.
+    var ownerId: String?
+    /// `[ownerId] + sharedWith`. The array queried for visibility. nil on legacy docs until migrated.
+    var memberIds: [String]?
     var createdAt: Date
     var updatedAt: Date
 
@@ -31,6 +35,8 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         remoteItemPhotoURL: String? = nil,
         locationChangedAt: Date? = nil,
         nfcTagUID: String? = nil,
+        ownerId: String? = nil,
+        memberIds: [String]? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -45,7 +51,16 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.remoteItemPhotoURL = remoteItemPhotoURL
         self.locationChangedAt = locationChangedAt
         self.nfcTagUID = nfcTagUID
+        self.ownerId = ownerId
+        self.memberIds = memberIds
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    /// Non-optional membership convenience; falls back to `[ownerId]` for legacy docs.
+    var members: [String] {
+        if let memberIds, !memberIds.isEmpty { return memberIds }
+        if let ownerId { return [ownerId] }
+        return []
     }
 }
