@@ -23,3 +23,26 @@ enum PDFPrinter {
         }
     }
 }
+
+/// Presents the system share sheet for a file URL, anchored for iPad, from the
+/// topmost presented view controller (so it works from within a SwiftUI sheet).
+enum PDFShare {
+    @MainActor
+    static func present(url: URL) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first else { return }
+
+        var top = window.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        guard let presenter = top else { return }
+
+        let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let pop = activity.popoverPresentationController {
+            pop.sourceView = presenter.view
+            pop.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
+            pop.permittedArrowDirections = []
+        }
+        presenter.present(activity, animated: true)
+    }
+}

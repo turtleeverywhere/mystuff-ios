@@ -165,7 +165,14 @@ struct BatchQRPrintSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        shareSheets()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .disabled(selectedIds.isEmpty)
+
                     Button("Print") { printSheets() }
                         .disabled(selectedIds.isEmpty)
                 }
@@ -187,8 +194,9 @@ struct BatchQRPrintSheet: View {
         selectedIds = allSelected ? [] : Set(entries.map(\.location.id))
     }
 
+    /// Renders the selected locations' QR tiles and packs them into an A4 PDF.
     @MainActor
-    private func printSheets() {
+    private func makeBatchPDF() -> Data? {
         let locations = entries.map(\.location).filter { selectedIds.contains($0.id) }
         let tiles: [UIImage] = locations.compactMap { loc in
             let urlString = AppLink.url(for: .location(loc.id)).absoluteString
@@ -197,9 +205,23 @@ struct BatchQRPrintSheet: View {
             renderer.scale = 3
             return renderer.uiImage
         }
-        guard !tiles.isEmpty else { return }
-        let data = QRSheetPDF.makePDF(tiles: tiles, cell: size.cell)
+        guard !tiles.isEmpty else { return nil }
+        return QRSheetPDF.makePDF(tiles: tiles, cell: size.cell)
+    }
+
+    @MainActor
+    private func printSheets() {
+        guard let data = makeBatchPDF() else { return }
         PDFPrinter.print(data, jobName: "Location QR codes")
         dismiss()
+    }
+
+    @MainActor
+    private func shareSheets() {
+        guard let data = makeBatchPDF() else { return }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("location-qr-codes.pdf")
+        guard (try? data.write(to: url)) != nil else { return }
+        PDFShare.present(url: url)
     }
 }
