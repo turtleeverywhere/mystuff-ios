@@ -25,7 +25,7 @@ struct ContentView: View {
             }
 
             if CoreNFCService.readingAvailable {
-                Tab("NFC", systemImage: "wave.3.right.circle.fill", value: 3) {
+                Tab("NFC/QR", systemImage: "wave.3.right.circle.fill", value: 3) {
                     NFCTabView(viewModel: viewModel)
                 }
             }

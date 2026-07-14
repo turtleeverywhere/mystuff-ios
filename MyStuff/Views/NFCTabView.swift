@@ -13,8 +13,11 @@ struct NFCTabView: View {
     @State private var lastScannedSerial: String?
     @State private var lastUnknownItemId: String?
 
+    @State private var showQRScanner = false
+    @State private var path: [Location] = []
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 24) {
                 Spacer()
 
@@ -58,9 +61,34 @@ struct NFCTabView: View {
                         .padding(.horizontal, 32)
                 }
 
+                if QRScannerView.isSupported {
+                    Button {
+                        showQRScanner = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.appAccent)
+                    .controlSize(.large)
+                    .padding(.horizontal, 32)
+                }
+
                 Spacer()
             }
-            .navigationTitle("NFC")
+            .navigationTitle("NFC/QR")
+            .navigationDestination(for: Location.self) { loc in
+                LocationDetailView(location: loc, viewModel: viewModel)
+            }
+            .sheet(isPresented: $showQRScanner) {
+                QRScannerSheet { locationId in
+                    if let loc = viewModel.locations.first(where: { $0.id == locationId }) {
+                        path.append(loc)
+                    }
+                }
+            }
             .sheet(item: $updateItem) { item in
                 NFCUpdateSheet(item: item, viewModel: viewModel)
             }
