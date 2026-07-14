@@ -4,8 +4,6 @@ import Foundation
 /// Item universal-link helpers used by the NFC read/write path.
 /// Delegates to `AppLink` so the host and URL shape live in one place.
 enum NFCLink {
-    static var host: String { AppLink.host }
-
     static func url(forItemId id: String) -> String {
         AppLink.url(for: .item(id)).absoluteString
     }
@@ -18,7 +16,7 @@ enum NFCLink {
 }
 
 struct NFCScanResult: Sendable {
-    /// Parsed item UUID if the tag's NDEF contains a `mystuff://item/<uuid>` URI record.
+    /// Parsed item UUID if the tag's NDEF contains a `https://<host>/item/<uuid>` URI record.
     /// After a successful write, this is the newly written ID.
     let itemId: String?
     /// For write operations: the item UUID that was on the tag before overwriting (if any).

@@ -107,7 +107,7 @@ struct QRCodeSheet: View {
         let safe = location.name
             .components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
         let name = safe.isEmpty ? "location" : safe
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-qr.\(ext)")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(location.id.prefix(8))-qr.\(ext)")
         do { try data.write(to: url); return url } catch { return nil }
     }
 

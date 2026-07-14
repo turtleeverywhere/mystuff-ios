@@ -1,12 +1,14 @@
 import SwiftUI
 import VisionKit
+import AVFoundation
+import UIKit
 
 /// VisionKit live QR scanner. Reports the first decoded barcode string via `onScan`.
 struct QRScannerView: UIViewControllerRepresentable {
     let onScan: (String) -> Void
 
     static var isSupported: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+        DataScannerViewController.isSupported
     }
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
@@ -57,31 +59,30 @@ struct QRScannerView: UIViewControllerRepresentable {
 
 /// Sheet wrapper: presents the scanner, parses the code via `AppLink`,
 /// and calls `onLocation(id)` for a location code. Non-location / non-app
-/// codes surface an inline message and keep scanning.
+/// codes surface an inline message and keep scanning. Handles camera
+/// authorization explicitly (prompts when undetermined, offers Settings when denied).
 struct QRScannerSheet: View {
     let onLocation: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var errorText: String?
+    @State private var authStatus = AVCaptureDevice.authorizationStatus(for: .video)
 
     var body: some View {
         NavigationStack {
             Group {
-                if QRScannerView.isSupported {
-                    QRScannerView { payload in handle(payload) }
-                        .ignoresSafeArea(edges: .bottom)
-                } else {
+                if !QRScannerView.isSupported {
                     ContentUnavailableView("Scanning unavailable",
                                            systemImage: "camera",
-                                           description: Text("This device can't scan QR codes."))
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if let errorText {
-                    Text(errorText)
-                        .font(.callout)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.bottom, 32)
+                                           description: Text("This device can’t scan QR codes."))
+                } else {
+                    switch authStatus {
+                    case .authorized:
+                        scanner
+                    case .notDetermined:
+                        Color.clear.task { await requestAccess() }
+                    default:
+                        cameraDenied
+                    }
                 }
             }
             .navigationTitle("Scan QR")
@@ -94,13 +95,47 @@ struct QRScannerSheet: View {
         }
     }
 
+    private var scanner: some View {
+        QRScannerView { payload in handle(payload) }
+            .ignoresSafeArea(edges: .bottom)
+            .overlay(alignment: .bottom) {
+                if let errorText {
+                    Text(errorText)
+                        .font(.callout)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.bottom, 32)
+                }
+            }
+    }
+
+    private var cameraDenied: some View {
+        ContentUnavailableView {
+            Label("Camera access needed", systemImage: "camera.fill")
+        } description: {
+            Text("Allow camera access in Settings to scan QR codes.")
+        } actions: {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func requestAccess() async {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
+        authStatus = granted ? .authorized : .denied
+    }
+
     private func handle(_ payload: String) {
         guard let url = URL(string: payload), let target = AppLink.parse(url) else {
             errorText = "Not a MyStuff code"
             return
         }
         guard case .location(let id) = target else {
-            errorText = "That's not a location code"
+            errorText = "That’s not a location code"
             return
         }
         HapticManager.success()
