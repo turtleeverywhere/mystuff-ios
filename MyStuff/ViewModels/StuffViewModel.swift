@@ -186,15 +186,18 @@ final class StuffViewModel {
         let hadCachedData = !ci.isEmpty || !cl.isEmpty || !cc.isEmpty
         isLoading = !hadCachedData
         do {
+            let currentUid = service.currentUserId
             async let serverItems = service.fetchItems(source: .server)
             async let serverLocations = service.fetchLocations(source: .server)
             async let serverCategories = service.fetchCategories(source: .server)
             let rawItems = try await serverItems
-            items = Self.deduped(Self.migratedPhotoFields(rawItems))
-            locations = Self.deduped(try await serverLocations)
+            let rawLocations = try await serverLocations
+            items = Self.deduped(Self.migratedPhotoFields(rawItems).map { Self.migratedSharingFields($0, currentUid: currentUid) })
+            locations = Self.deduped(rawLocations.map { Self.migratedSharingFields($0, currentUid: currentUid) })
             categories = Self.deduped(try await serverCategories)
             // Persist any in-place migrations back to Firestore.
             await persistPhotoMigrationsIfNeeded(rawItems: rawItems)
+            await persistSharingMigrationsIfNeeded(rawItems: rawItems, rawLocations: rawLocations, currentUid: currentUid)
         } catch {
             // Keep cached data; only surface error if we have nothing
             if !hadCachedData {
@@ -255,10 +258,48 @@ final class StuffViewModel {
         }
     }
 
+    // MARK: - Sharing schema migration
+    //
+    // Legacy Item/Location docs predate `ownerId`/`memberIds`. Backfill on load so
+    // collectionGroup `memberIds arrayContains` queries (P2) find them, and writes
+    // route to the correct owner subcollection.
+
+    private static func migratedSharingFields(_ item: Item, currentUid: String) -> Item {
+        var u = item
+        let owner = u.ownerId ?? currentUid
+        u.ownerId = owner
+        if u.memberIds == nil || (u.memberIds?.isEmpty ?? true) { u.memberIds = [owner] }
+        return u
+    }
+
+    private static func migratedSharingFields(_ location: Location, currentUid: String) -> Location {
+        var u = location
+        let owner = u.ownerId ?? currentUid
+        u.ownerId = owner
+        if u.memberIds == nil || (u.memberIds?.isEmpty ?? true) { u.memberIds = [owner] }
+        return u
+    }
+
+    private func persistSharingMigrationsIfNeeded(rawItems: [Item], rawLocations: [Location], currentUid: String) async {
+        for raw in rawItems {
+            let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+            if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                try? await service.updateItem(migrated)
+            }
+        }
+        for raw in rawLocations {
+            let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+            if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                try? await service.updateLocation(migrated)
+            }
+        }
+    }
+
     // MARK: - Item CRUD
 
     func addItem(name: String, notes: String?, locationId: String?, categoryId: String?) async {
-        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil)
+        let owner = service.currentUserId
+        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil, ownerId: owner, memberIds: [owner])
         do {
             try await service.addItem(item)
             if !items.contains(where: { $0.id == item.id }) {
@@ -474,7 +515,8 @@ final class StuffViewModel {
     // MARK: - Location CRUD
 
     func addLocation(name: String, emoji: String?, parentId: String? = nil) async {
-        let location = Location(name: name, emoji: emoji, parentId: parentId)
+        let owner = service.currentUserId
+        let location = Location(name: name, emoji: emoji, parentId: parentId, ownerId: owner, memberIds: [owner])
         do {
             try await service.addLocation(location)
             locations.append(location)
