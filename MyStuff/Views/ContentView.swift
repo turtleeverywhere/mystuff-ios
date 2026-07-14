@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var authService: AuthService
     @State private var viewModel = StuffViewModel()
+    @State private var social = SocialViewModel()
     @State private var selectedTab = 0
     @State private var showingProfile = false
     @State private var pendingNFCItemId: String?
@@ -13,7 +14,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Home", systemImage: "house.fill", value: 0) {
-                HomeView(viewModel: viewModel, onProfileTap: { showingProfile = true })
+                HomeView(viewModel: viewModel, onProfileTap: { showingProfile = true }, pendingRequestCount: social.incomingPendingCount)
             }
 
             Tab("Items", systemImage: "shippingbox.fill", value: 1) {
@@ -35,9 +36,12 @@ struct ContentView: View {
         .task {
             await viewModel.loadData()
         }
+        .task {
+            await social.load()
+        }
         .sheet(isPresented: $showingProfile) {
-            ProfileSheet(authService: authService)
-                .presentationDetents([.medium])
+            ProfileSheet(authService: authService, social: social)
+                .presentationDetents([.medium, .large])
         }
         .sheet(item: $deepLinkedItem) { item in
             NFCUpdateSheet(item: item, viewModel: viewModel)
@@ -88,6 +92,7 @@ struct ContentView: View {
 
 struct ProfileSheet: View {
     @Bindable var authService: AuthService
+    @Bindable var social: SocialViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -107,6 +112,25 @@ struct ProfileSheet: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+
+                Section {
+                    NavigationLink {
+                        FriendsView(social: social)
+                    } label: {
+                        HStack {
+                            Label("Friends", systemImage: "person.2.fill")
+                            Spacer()
+                            if social.incomingPendingCount > 0 {
+                                Text("\(social.incomingPendingCount)")
+                                    .font(.caption2).bold()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red, in: Capsule())
+                            }
+                        }
+                    }
                 }
 
                 Section {

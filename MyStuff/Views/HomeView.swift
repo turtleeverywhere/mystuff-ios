@@ -4,6 +4,7 @@ import SwiftUI
 struct HomeView: View {
     @Bindable var viewModel: StuffViewModel
     var onProfileTap: (() -> Void)? = nil
+    var pendingRequestCount: Int = 0
     @State private var selectedItem: Item?
     @State private var detailItem: Item?
     @State private var itemToPromptPhoto: Item?
@@ -72,6 +73,14 @@ struct HomeView: View {
                             Image(systemName: "person.circle.fill")
                                 .font(.title3)
                                 .symbolRenderingMode(.hierarchical)
+                                .overlay(alignment: .topTrailing) {
+                                    if pendingRequestCount > 0 {
+                                        Circle()
+                                            .fill(Color.red)
+                                            .frame(width: 10, height: 10)
+                                            .offset(x: 3, y: -2)
+                                    }
+                                }
                         }
                     }
                 }
