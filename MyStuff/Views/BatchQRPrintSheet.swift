@@ -234,8 +234,9 @@ struct BatchQRPrintSheet: View {
     @MainActor
     private func printSheets() {
         guard let data = makeBatchPDF() else { return }
+        // Don't dismiss: the AirPrint UI presents over this sheet; dismissing
+        // here would tear it down immediately.
         PDFPrinter.print(data, jobName: "Location QR codes")
-        dismiss()
     }
 
     @MainActor

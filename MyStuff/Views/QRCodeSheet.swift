@@ -10,6 +10,7 @@ struct QRCodeSheet: View {
     @State private var qrImage: UIImage?
     @State private var pngURL: URL?
     @State private var pdfURL: URL?
+    @State private var size: QRTileSize = .medium
     @State private var showIcon = true
     @State private var showName = true
     @State private var showBatch = false
@@ -33,6 +34,7 @@ struct QRCodeSheet: View {
         }
         .presentationDetents([.large])
         .task { render() }
+        .onChange(of: size) { render() }
         .onChange(of: showIcon) { render() }
         .onChange(of: showName) { render() }
     }
@@ -40,11 +42,16 @@ struct QRCodeSheet: View {
     @ViewBuilder
     private func content(qrImage: UIImage) -> some View {
         VStack(spacing: 24) {
-            QRStickerView(location: location, qrImage: qrImage, showIcon: showIcon, showName: showName)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(radius: 8)
+            QRTileView(location: location, qrImage: qrImage, size: size, showIcon: showIcon, showName: showName)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 6)
 
             VStack(spacing: 12) {
+                Picker("QR size", selection: $size) {
+                    ForEach(QRTileSize.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
                 Toggle("Include icon", isOn: $showIcon)
                 Toggle("Include name", isOn: $showName)
             }
@@ -99,38 +106,25 @@ struct QRCodeSheet: View {
 
     // MARK: - Export
 
-    /// (Re)builds the QR image once and the PNG/PDF exports for the current
-    /// icon/name toggles. Re-runs whenever a toggle changes.
+    /// (Re)builds the QR image and the PNG/PDF exports for the current size and
+    /// icon/name toggles. Re-runs whenever one of those changes. The PDF places
+    /// the tile on an A4 page at its actual size so print isn't scaled to fill.
     @MainActor
     private func render() {
         let urlString = AppLink.url(for: .location(location.id)).absoluteString
         guard let qr = qrImage ?? QRCodeGenerator.image(for: urlString) else { return }
         qrImage = qr
 
-        let sticker = QRStickerView(location: location, qrImage: qr, showIcon: showIcon, showName: showName)
-        let renderer = ImageRenderer(content: sticker)
+        let tile = QRTileView(location: location, qrImage: qr, size: size, showIcon: showIcon, showName: showName)
+        let renderer = ImageRenderer(content: tile)
         renderer.scale = 3
+        guard let image = renderer.uiImage else { return }
 
-        if let uiImage = renderer.uiImage, let data = uiImage.pngData() {
+        if let data = image.pngData() {
             pngURL = writeTemp(data, ext: "png")
         }
-        if let data = renderPDF(renderer) {
-            pdfURL = writeTemp(data, ext: "pdf")
-        }
-    }
-
-    private func renderPDF(_ renderer: ImageRenderer<QRStickerView>) -> Data? {
-        let pdfData = NSMutableData()
-        renderer.render { size, renderInContext in
-            var box = CGRect(origin: .zero, size: size)
-            guard let consumer = CGDataConsumer(data: pdfData as CFMutableData),
-                  let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return }
-            ctx.beginPDFPage(nil)
-            renderInContext(ctx)
-            ctx.endPDFPage()
-            ctx.closePDF()
-        }
-        return pdfData.length > 0 ? (pdfData as Data) : nil
+        let pdf = QRSheetPDF.makePDF(tiles: [image], cell: size.cell(hasCaption: showIcon || showName))
+        pdfURL = writeTemp(pdf, ext: "pdf")
     }
 
     private func writeTemp(_ data: Data, ext: String) -> URL? {

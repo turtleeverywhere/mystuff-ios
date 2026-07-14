@@ -127,13 +127,14 @@ struct LocationsView: View {
                             }
                         } label: {
                             Image(systemName: expandedIds.contains(entry.location.id) ? "chevron.down" : "chevron.right")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundStyle(.secondary)
-                                .frame(width: 24, height: 24)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     } else {
-                        Spacer().frame(width: 24)
+                        Spacer().frame(width: 44)
                     }
 
                     // Location label -> detail. A plain Button with programmatic
