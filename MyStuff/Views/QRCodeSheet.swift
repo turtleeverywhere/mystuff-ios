@@ -9,6 +9,8 @@ struct QRCodeSheet: View {
     @State private var qrImage: UIImage?
     @State private var pngURL: URL?
     @State private var pdfURL: URL?
+    @State private var showIcon = true
+    @State private var showName = true
 
     var body: some View {
         NavigationStack {
@@ -28,15 +30,24 @@ struct QRCodeSheet: View {
             }
         }
         .presentationDetents([.large])
-        .task { prepare() }
+        .task { render() }
+        .onChange(of: showIcon) { render() }
+        .onChange(of: showName) { render() }
     }
 
     @ViewBuilder
     private func content(qrImage: UIImage) -> some View {
         VStack(spacing: 24) {
-            QRStickerView(location: location, qrImage: qrImage)
+            QRStickerView(location: location, qrImage: qrImage, showIcon: showIcon, showName: showName)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .shadow(radius: 8)
+
+            VStack(spacing: 12) {
+                Toggle("Include icon", isOn: $showIcon)
+                Toggle("Include name", isOn: $showName)
+            }
+            .tint(Color.appAccent)
+            .padding(.horizontal)
 
             HStack(spacing: 16) {
                 if let pdfURL {
@@ -72,13 +83,16 @@ struct QRCodeSheet: View {
 
     // MARK: - Export
 
+    /// (Re)builds the QR image once and the PNG/PDF exports for the current
+    /// icon/name toggles. Re-runs whenever a toggle changes.
     @MainActor
-    private func prepare() {
+    private func render() {
         let urlString = AppLink.url(for: .location(location.id)).absoluteString
-        guard let qr = QRCodeGenerator.image(for: urlString) else { return }
+        guard let qr = qrImage ?? QRCodeGenerator.image(for: urlString) else { return }
         qrImage = qr
 
-        let renderer = ImageRenderer(content: QRStickerView(location: location, qrImage: qr))
+        let sticker = QRStickerView(location: location, qrImage: qr, showIcon: showIcon, showName: showName)
+        let renderer = ImageRenderer(content: sticker)
         renderer.scale = 3
 
         if let uiImage = renderer.uiImage, let data = uiImage.pngData() {
