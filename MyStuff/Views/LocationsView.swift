@@ -7,6 +7,7 @@ struct LocationsView: View {
     @State private var expandedIds: Set<String> = []
     @State private var path: [Location] = []
     @State private var showingScanner = false
+    @State private var addingSublocationParent: Location?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -53,6 +54,16 @@ struct LocationsView: View {
                         path.append(loc)
                     }
                 }
+            }
+            .sheet(item: $addingSublocationParent) { parent in
+                LocationFormSheet(
+                    initialParentId: parent.id,
+                    viewModel: viewModel,
+                    onSave: { name, emoji, parentId in
+                        Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
+                        if let parentId { expandedIds.insert(parentId) }
+                    }
+                )
             }
             .alert("Delete Location?", isPresented: Binding(
                 get: { locationToDelete != nil },
@@ -143,6 +154,13 @@ struct LocationsView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    .contextMenu {
+                        Button {
+                            addingSublocationParent = entry.location
+                        } label: {
+                            Label("Add Sub-location", systemImage: "plus")
+                        }
+                    }
                 }
                 .padding(.leading, CGFloat(entry.depth) * 24)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -187,13 +205,15 @@ struct LocationFormSheet: View {
     private static let noParentSentinel = "__none__"
     private let popularEmojis = ["🏠", "🚗", "📦", "🏢", "🛋️", "🖥️", "🚙", "🏠", "🔧", "🏕️", "🎒", "🗄️"]
 
-    init(location: Location? = nil, viewModel: StuffViewModel, onSave: @escaping (String, String?, String?) -> Void) {
+    /// `initialParentId` pre-selects a parent when creating a NEW location
+    /// (e.g. "Add Sub-location" from a long-press); ignored when editing.
+    init(location: Location? = nil, initialParentId: String? = nil, viewModel: StuffViewModel, onSave: @escaping (String, String?, String?) -> Void) {
         self.location = location
         self.viewModel = viewModel
         self.onSave = onSave
         _name = State(initialValue: location?.name ?? "")
         _emoji = State(initialValue: location?.emoji ?? "")
-        _selectedParentId = State(initialValue: location?.parentId ?? Self.noParentSentinel)
+        _selectedParentId = State(initialValue: location?.parentId ?? initialParentId ?? Self.noParentSentinel)
     }
 
     var body: some View {
