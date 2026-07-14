@@ -18,10 +18,12 @@ enum QRTileSize: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Fixed cell size the tile occupies in the grid (points). Height leaves
-    /// room for a two-line name caption under the code.
-    var cell: CGSize {
-        CGSize(width: qrSide + 34, height: qrSide + 52)
+    /// Fixed cell size the tile occupies in the grid (points). With a caption,
+    /// height leaves room for a two-line name under the code; without, the cell
+    /// hugs the QR so more fit per page.
+    func cell(hasCaption: Bool) -> CGSize {
+        CGSize(width: qrSide + (hasCaption ? 34 : 20),
+               height: qrSide + (hasCaption ? 52 : 20))
     }
 }
 
@@ -30,28 +32,39 @@ struct QRTileView: View {
     let location: Location
     let qrImage: UIImage
     let size: QRTileSize
+    var showIcon: Bool = true
+    var showName: Bool = true
+
+    private var showsCaption: Bool { showIcon || showName }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: showsCaption ? 6 : 0) {
             Image(uiImage: qrImage)
                 .interpolation(.none)
                 .resizable()
                 .scaledToFit()
                 .frame(width: size.qrSide, height: size.qrSide)
 
-            HStack(spacing: 3) {
-                Text(location.emoji ?? "📍")
-                    .font(.system(size: max(10, size.qrSide * 0.13)))
-                Text(location.name)
-                    .font(.system(size: max(8, size.qrSide * 0.11), weight: .semibold))
-                    .foregroundStyle(.black)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.6)
+            if showsCaption {
+                HStack(spacing: 3) {
+                    if showIcon {
+                        Text(location.emoji ?? "📍")
+                            .font(.system(size: max(10, size.qrSide * 0.13)))
+                    }
+                    if showName {
+                        Text(location.name)
+                            .font(.system(size: max(8, size.qrSide * 0.11), weight: .semibold))
+                            .foregroundStyle(.black)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.6)
+                    }
+                }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
         }
-        .frame(width: size.cell.width, height: size.cell.height)
+        .frame(width: size.cell(hasCaption: showsCaption).width,
+               height: size.cell(hasCaption: showsCaption).height)
         .background(Color.white)
     }
 }
@@ -99,6 +112,8 @@ struct BatchQRPrintSheet: View {
 
     @State private var selectedIds: Set<String>
     @State private var size: QRTileSize = .medium
+    @State private var showIcon = true
+    @State private var showName = true
 
     init(viewModel: StuffViewModel, initialSelection: Set<String> = []) {
         self.viewModel = viewModel
@@ -109,7 +124,9 @@ struct BatchQRPrintSheet: View {
         viewModel.flattenedLocationTree()
     }
 
-    private var perPage: Int { QRSheetPDF.gridInfo(cell: size.cell).perPage }
+    private var hasCaption: Bool { showIcon || showName }
+
+    private var perPage: Int { QRSheetPDF.gridInfo(cell: size.cell(hasCaption: hasCaption)).perPage }
 
     private var pageCount: Int {
         selectedIds.isEmpty ? 0 : Int(ceil(Double(selectedIds.count) / Double(perPage)))
@@ -127,6 +144,11 @@ struct BatchQRPrintSheet: View {
                         ForEach(QRTileSize.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
+
+                    Toggle("Include icon", isOn: $showIcon)
+                        .tint(Color.appAccent)
+                    Toggle("Include name", isOn: $showName)
+                        .tint(Color.appAccent)
                 } footer: {
                     Text(summary)
                 }
@@ -201,12 +223,12 @@ struct BatchQRPrintSheet: View {
         let tiles: [UIImage] = locations.compactMap { loc in
             let urlString = AppLink.url(for: .location(loc.id)).absoluteString
             guard let qr = QRCodeGenerator.image(for: urlString) else { return nil }
-            let renderer = ImageRenderer(content: QRTileView(location: loc, qrImage: qr, size: size))
+            let renderer = ImageRenderer(content: QRTileView(location: loc, qrImage: qr, size: size, showIcon: showIcon, showName: showName))
             renderer.scale = 3
             return renderer.uiImage
         }
         guard !tiles.isEmpty else { return nil }
-        return QRSheetPDF.makePDF(tiles: tiles, cell: size.cell)
+        return QRSheetPDF.makePDF(tiles: tiles, cell: size.cell(hasCaption: hasCaption))
     }
 
     @MainActor
