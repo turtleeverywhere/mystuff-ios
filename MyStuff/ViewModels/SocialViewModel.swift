@@ -96,6 +96,11 @@ final class SocialViewModel {
                 errorMessage = "You're already friends."
                 return false
             }
+            if let incoming = incomingRequests.first(where: { $0.fromUid == target.uid }) {
+                // They already invited me — accept instead of sending a reversed request.
+                await respond(to: incoming, accept: true)
+                return true
+            }
             if outgoingRequests.contains(where: { $0.toUid == target.uid }) {
                 errorMessage = "Request already sent."
                 return false
