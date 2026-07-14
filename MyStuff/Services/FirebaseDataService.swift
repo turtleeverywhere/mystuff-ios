@@ -45,6 +45,20 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
         return try snapshot.documents.map { try $0.data(as: Item.self) }
     }
 
+    func fetchOwnItems() async throws -> [Item] {
+        let snapshot = try await itemsCollection(owner: uid)
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: .server)
+        return try snapshot.documents.map { try $0.data(as: Item.self) }
+    }
+
+    func fetchOwnLocations() async throws -> [Location] {
+        let snapshot = try await locationsCollection(owner: uid)
+            .order(by: "createdAt", descending: true)
+            .getDocuments(source: .server)
+        return try snapshot.documents.map { try $0.data(as: Location.self) }
+    }
+
     func addItem(_ item: Item) async throws {
         var item = item
         let owner = owner(of: item.ownerId)

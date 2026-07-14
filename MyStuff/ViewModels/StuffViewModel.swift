@@ -187,6 +187,7 @@ final class StuffViewModel {
         isLoading = !hadCachedData
         do {
             let currentUid = service.currentUserId
+            await backfillOwnSharingFieldsIfNeeded(currentUid: currentUid)
             async let serverItems = service.fetchItems(source: .server)
             async let serverLocations = service.fetchLocations(source: .server)
             async let serverCategories = service.fetchCategories(source: .server)
@@ -292,6 +293,34 @@ final class StuffViewModel {
             if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
                 try? await service.updateLocation(migrated)
             }
+        }
+    }
+
+    /// One-time-per-user backfill of `ownerId`/`memberIds` on the user's OWN docs, read via
+    /// the pre-sharing per-owner path. Guarantees own docs carry `memberIds` so the
+    /// collectionGroup `arrayContains` read returns them. Guarded by a UserDefaults flag.
+    private func backfillOwnSharingFieldsIfNeeded(currentUid: String) async {
+        guard !currentUid.isEmpty else { return }
+        let key = "sharingBackfillDone_\(currentUid)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            let ownItems = try await service.fetchOwnItems()
+            for raw in ownItems {
+                let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+                if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                    try? await service.updateItem(migrated)
+                }
+            }
+            let ownLocations = try await service.fetchOwnLocations()
+            for raw in ownLocations {
+                let migrated = Self.migratedSharingFields(raw, currentUid: currentUid)
+                if raw.ownerId != migrated.ownerId || raw.memberIds != migrated.memberIds {
+                    try? await service.updateLocation(migrated)
+                }
+            }
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            // Leave the flag unset so we retry on the next launch.
         }
     }
 

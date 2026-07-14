@@ -17,6 +17,12 @@ protocol DataService: Sendable {
     /// constant (Mock). Used to stamp `ownerId`/`memberIds` on new entities.
     var currentUserId: String { get }
 
+    /// Read the current user's OWN items subcollection directly (pre-sharing path).
+    /// Used once to backfill `memberIds`/`ownerId` before the collectionGroup read.
+    func fetchOwnItems() async throws -> [Item]
+    /// Read the current user's OWN locations subcollection directly.
+    func fetchOwnLocations() async throws -> [Location]
+
     // MARK: - Items
 
     func fetchItems(source: FetchSource) async throws -> [Item]

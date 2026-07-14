@@ -49,6 +49,9 @@ final class MockDataService: DataService, @unchecked Sendable {
         items
     }
 
+    func fetchOwnItems() async throws -> [Item] { items }
+    func fetchOwnLocations() async throws -> [Location] { locations }
+
     func addItem(_ item: Item) async throws {
         var item = item
         if item.ownerId == nil { item.ownerId = currentUserId }
