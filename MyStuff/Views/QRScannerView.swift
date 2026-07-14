@@ -27,7 +27,9 @@ struct QRScannerView: UIViewControllerRepresentable {
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         private let onScan: (String) -> Void
-        private var handled = false
+        /// Last payload we forwarded, to suppress duplicate reports of the same
+        /// continuously-visible code while still allowing a different code to fire.
+        private var lastReported: String?
 
         init(onScan: @escaping (String) -> Void) { self.onScan = onScan }
 
@@ -42,13 +44,12 @@ struct QRScannerView: UIViewControllerRepresentable {
         }
 
         private func handle(_ items: [RecognizedItem]) {
-            guard !handled else { return }
             for case let .barcode(barcode) in items {
-                if let payload = barcode.payloadStringValue {
-                    handled = true
-                    onScan(payload)
-                    return
-                }
+                guard let payload = barcode.payloadStringValue else { continue }
+                guard payload != lastReported else { return }
+                lastReported = payload
+                onScan(payload)
+                return
             }
         }
     }
