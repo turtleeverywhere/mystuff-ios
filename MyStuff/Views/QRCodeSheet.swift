@@ -4,6 +4,7 @@ import UIKit
 /// Sheet that shows a location's QR sticker with Share (PNG/PDF) and Print actions.
 struct QRCodeSheet: View {
     let location: Location
+    let viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var qrImage: UIImage?
@@ -11,6 +12,7 @@ struct QRCodeSheet: View {
     @State private var pdfURL: URL?
     @State private var showIcon = true
     @State private var showName = true
+    @State private var showBatch = false
 
     var body: some View {
         NavigationStack {
@@ -76,9 +78,23 @@ struct QRCodeSheet: View {
             .disabled(pdfURL == nil)
             .padding(.horizontal)
 
+            Button {
+                showBatch = true
+            } label: {
+                Label("Print Multiple…", systemImage: "square.grid.2x2")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.bordered)
+            .tint(Color.appAccent)
+            .padding(.horizontal)
+
             Spacer()
         }
         .padding()
+        .sheet(isPresented: $showBatch) {
+            BatchQRPrintSheet(viewModel: viewModel, initialSelection: [location.id])
+        }
     }
 
     // MARK: - Export
@@ -127,19 +143,6 @@ struct QRCodeSheet: View {
 
     private func printSticker() {
         guard let pdfURL, let data = try? Data(contentsOf: pdfURL) else { return }
-        let info = UIPrintInfo(dictionary: nil)
-        info.jobName = "\(location.name) QR"
-        info.outputType = .general
-        let controller = UIPrintInteractionController.shared
-        controller.printInfo = info
-        controller.printingItem = data
-        if let window = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow }) {
-            controller.present(from: window.bounds, in: window, animated: true, completionHandler: nil)
-        } else {
-            controller.present(animated: true, completionHandler: nil)
-        }
+        PDFPrinter.print(data, jobName: "\(location.name) QR")
     }
 }

@@ -75,7 +75,7 @@ struct LocationDetailView: View {
             }
         }
         .sheet(isPresented: $showingQR) {
-            QRCodeSheet(location: live)
+            QRCodeSheet(location: live, viewModel: viewModel)
         }
         .sheet(isPresented: $showingEdit) {
             LocationFormSheet(
