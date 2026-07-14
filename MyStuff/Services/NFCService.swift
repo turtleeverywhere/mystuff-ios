@@ -1,23 +1,18 @@
 import Foundation
 @preconcurrency import CoreNFC
 
-/// Universal link host used for NFC tag URLs. Tags written as
-/// `https://<host>/item/<uuid>` so iOS can route background tag taps to the app.
+/// Item universal-link helpers used by the NFC read/write path.
+/// Delegates to `AppLink` so the host and URL shape live in one place.
 enum NFCLink {
-    static let host = "mystuff.coding-turtle.org"
-    static let pathPrefix = "/item/"
+    static var host: String { AppLink.host }
 
     static func url(forItemId id: String) -> String {
-        "https://\(host)\(pathPrefix)\(id)"
+        AppLink.url(for: .item(id)).absoluteString
     }
 
     /// Extract item UUID from any URL we recognize as an NFC payload.
     static func itemId(from url: URL) -> String? {
-        // https://<host>/item/<uuid>
-        if url.scheme == "https", url.host == host, url.path.hasPrefix(pathPrefix) {
-            let id = String(url.path.dropFirst(pathPrefix.count))
-            return id.isEmpty ? nil : id
-        }
+        if case .item(let id)? = AppLink.parse(url) { return id }
         return nil
     }
 }
