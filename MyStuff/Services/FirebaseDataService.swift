@@ -38,7 +38,8 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
     // MARK: - Items
 
     func fetchItems(source: FetchSource) async throws -> [Item] {
-        let snapshot = try await itemsCollection(owner: uid)
+        let snapshot = try await db.collectionGroup("items")
+            .whereField("memberIds", arrayContains: uid)
             .order(by: "createdAt", descending: true)
             .getDocuments(source: source.firestoreSource)
         return try snapshot.documents.map { try $0.data(as: Item.self) }
@@ -63,7 +64,8 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
     // MARK: - Locations
 
     func fetchLocations(source: FetchSource) async throws -> [Location] {
-        let snapshot = try await locationsCollection(owner: uid)
+        let snapshot = try await db.collectionGroup("locations")
+            .whereField("memberIds", arrayContains: uid)
             .order(by: "createdAt", descending: true)
             .getDocuments(source: source.firestoreSource)
         return try snapshot.documents.map { try $0.data(as: Location.self) }
