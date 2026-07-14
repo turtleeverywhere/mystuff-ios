@@ -13,6 +13,10 @@ enum FetchSource {
 /// Protocol defining all CRUD operations for items and locations.
 protocol DataService: Sendable {
 
+    /// Current authenticated user's uid. Empty string if unauthenticated (Firebase) or a stable
+    /// constant (Mock). Used to stamp `ownerId`/`memberIds` on new entities.
+    var currentUserId: String { get }
+
     // MARK: - Items
 
     func fetchItems(source: FetchSource) async throws -> [Item]

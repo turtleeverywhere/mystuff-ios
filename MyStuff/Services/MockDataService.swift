@@ -7,6 +7,8 @@ final class MockDataService: DataService, @unchecked Sendable {
     private var locations: [Location]
     private var categories: [Category]
 
+    let currentUserId = "mock-user"
+
     init() {
         let livingRoom = Location(id: "loc-1", name: "Living Room", emoji: "🛋️")
         let garage = Location(id: "loc-2", name: "Garage", emoji: "🚗")
@@ -48,6 +50,9 @@ final class MockDataService: DataService, @unchecked Sendable {
     }
 
     func addItem(_ item: Item) async throws {
+        var item = item
+        if item.ownerId == nil { item.ownerId = currentUserId }
+        if item.memberIds == nil { item.memberIds = [item.ownerId ?? currentUserId] }
         items.append(item)
     }
 
@@ -68,6 +73,9 @@ final class MockDataService: DataService, @unchecked Sendable {
     }
 
     func addLocation(_ location: Location) async throws {
+        var location = location
+        if location.ownerId == nil { location.ownerId = currentUserId }
+        if location.memberIds == nil { location.memberIds = [location.ownerId ?? currentUserId] }
         locations.append(location)
     }
 
