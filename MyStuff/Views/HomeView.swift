@@ -651,6 +651,8 @@ struct MoveItemSheet: View {
     let onMove: (String?) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var showingScanner = false
+    @State private var unknownScan = false
 
     var body: some View {
         // Detents are ignored in regular width (iPad form sheet); use page sizing there instead.
@@ -664,6 +666,16 @@ struct MoveItemSheet: View {
     private var content: some View {
         NavigationStack {
             List {
+                if QRScannerView.isSupported {
+                    Section {
+                        Button {
+                            showingScanner = true
+                        } label: {
+                            Label("Scan location QR", systemImage: "qrcode.viewfinder")
+                        }
+                    }
+                }
+
                 Section("Move \"\(item.name)\" to…") {
                     Button {
                         onMove(nil)
@@ -695,6 +707,21 @@ struct MoveItemSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showingScanner) {
+                QRScannerSheet { locationId in
+                    if viewModel.locations.contains(where: { $0.id == locationId }) {
+                        onMove(locationId)
+                        dismiss()
+                    } else {
+                        unknownScan = true
+                    }
+                }
+            }
+            .alert("Location not found", isPresented: $unknownScan) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("That QR points to a location that no longer exists.")
             }
         }
     }
