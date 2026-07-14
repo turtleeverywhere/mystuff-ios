@@ -1,4 +1,7 @@
-const functions = require("firebase-functions");
+// Pin to the v1 API explicitly: keeps this a 1st-gen callable so the client's
+// hardcoded https://us-central1-<project>.cloudfunctions.net/lookupUserByEmail
+// URL stays valid. (firebase-functions v6 makes the root import v2.)
+const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
