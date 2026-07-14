@@ -58,9 +58,13 @@ final class SocialViewModel {
         let friendIds = Set(existingFriends.map(\.uid))
         for req in outgoing where req.status == .accepted && !friendIds.contains(req.toUid) {
             let friend = Friend(uid: req.toUid, email: req.toEmail, displayName: req.toName, photoURL: req.toPhotoURL)
-            try? await service.addFriend(friend)
-            if !friends.contains(where: { $0.uid == friend.uid }) {
-                friends.append(friend)
+            do {
+                try await service.addFriend(friend)
+                if !friends.contains(where: { $0.uid == friend.uid }) {
+                    friends.append(friend)
+                }
+            } catch {
+                // Leave for the next load to retry; don't show an optimistic unpersisted friend.
             }
         }
     }
@@ -118,16 +122,20 @@ final class SocialViewModel {
 
     func respond(to request: FriendRequest, accept: Bool) async {
         do {
-            try await service.respondToRequest(request, accept: accept)
-            incomingRequests.removeAll { $0.id == request.id }
             if accept {
+                // Write the friendship BEFORE flipping status / removing from the list,
+                // so a failure leaves the request pending and retryable.
                 let friend = Friend(uid: request.fromUid, email: request.fromEmail, displayName: request.fromName, photoURL: request.fromPhotoURL)
                 try await service.addFriend(friend)
+                try await service.respondToRequest(request, accept: true)
                 if !friends.contains(where: { $0.uid == friend.uid }) {
                     friends.append(friend)
                 }
+                incomingRequests.removeAll { $0.id == request.id }
                 HapticManager.success()
             } else {
+                try await service.respondToRequest(request, accept: false)
+                incomingRequests.removeAll { $0.id == request.id }
                 HapticManager.impact()
             }
         } catch {
