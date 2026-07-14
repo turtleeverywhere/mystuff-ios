@@ -6,6 +6,7 @@ struct LocationsView: View {
     @State private var locationToDelete: Location?
     @State private var expandedIds: Set<String> = []
     @State private var path: [Location] = []
+    @State private var showingScanner = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,6 +29,15 @@ struct LocationsView: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    if QRScannerView.isSupported {
+                        Button {
+                            showingScanner = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $showingAddSheet) {
                 LocationFormSheet(
@@ -36,6 +46,13 @@ struct LocationsView: View {
                         Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
                     }
                 )
+            }
+            .sheet(isPresented: $showingScanner) {
+                QRScannerSheet { locationId in
+                    if let loc = viewModel.locations.first(where: { $0.id == locationId }) {
+                        path.append(loc)
+                    }
+                }
             }
             .alert("Delete Location?", isPresented: Binding(
                 get: { locationToDelete != nil },
