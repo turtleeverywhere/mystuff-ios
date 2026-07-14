@@ -100,6 +100,7 @@ private struct AddFriendSheet: View {
             }
             .navigationTitle("Add Friend")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { social.errorMessage = nil }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
