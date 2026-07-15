@@ -407,6 +407,8 @@ struct ItemFormSheet: View {
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var shareWith: Set<String>
+    @State private var showLocationScanner = false
+    @State private var unknownLocationScan = false
 
     private enum PhotoTarget { case item, location }
 
@@ -421,6 +423,7 @@ struct ItemFormSheet: View {
 
     init(
         item: Item? = nil,
+        initialLocationId: String? = nil,
         viewModel: StuffViewModel,
         onSave: @escaping (String, String?, String?, String?, Data?, Data?, Set<String>) -> Void
     ) {
@@ -429,7 +432,7 @@ struct ItemFormSheet: View {
         self.onSave = onSave
         _name = State(initialValue: item?.name ?? "")
         _notes = State(initialValue: item?.notes ?? "")
-        _selectedLocationId = State(initialValue: item?.locationId ?? "__unassigned__")
+        _selectedLocationId = State(initialValue: item?.locationId ?? initialLocationId ?? "__unassigned__")
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
         _useSameForLocation = State(initialValue: item == nil)
         _shareWith = State(initialValue: [])
@@ -537,11 +540,23 @@ struct ItemFormSheet: View {
                 }
 
                 Section("Location") {
-                    Picker("Location", selection: $selectedLocationId) {
-                        Text("Unassigned").tag(unassignedSentinel)
-                        ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
-                                .tag(entry.location.id)
+                    HStack {
+                        Picker("Location", selection: $selectedLocationId) {
+                            Text("Unassigned").tag(unassignedSentinel)
+                            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+                                Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
+                                    .tag(entry.location.id)
+                            }
+                        }
+                        if QRScannerView.isSupported {
+                            Button {
+                                showLocationScanner = true
+                            } label: {
+                                Image(systemName: "qrcode.viewfinder")
+                                    .font(.title3)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Scan location QR code")
                         }
                     }
                 }
@@ -633,6 +648,20 @@ struct ItemFormSheet: View {
                     onCamera: { showCamera = true },
                     onLibrary: { showPhotoPicker = true }
                 )
+            }
+            .sheet(isPresented: $showLocationScanner) {
+                QRScannerSheet { locationId in
+                    if viewModel.locations.contains(where: { $0.id == locationId }) {
+                        selectedLocationId = locationId
+                    } else {
+                        unknownLocationScan = true
+                    }
+                }
+            }
+            .alert("Location not found", isPresented: $unknownLocationScan) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("That QR points to a location that no longer exists.")
             }
             .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fullScreenCover(isPresented: $showCamera) {

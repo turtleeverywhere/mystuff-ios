@@ -11,6 +11,7 @@ struct LocationDetailView: View {
     @State private var detailItem: Item?
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
+    @State private var showingAddItem = false
 
     /// Follow live edits so the header/list update after Edit.
     private var live: Location {
@@ -60,6 +61,12 @@ struct LocationDetailView: View {
             }
 
             Section("Items") {
+                Button {
+                    showingAddItem = true
+                } label: {
+                    Label("Add item here", systemImage: "plus.circle")
+                }
+
                 Button {
                     showingMoveItemsHere = true
                 } label: {
@@ -113,6 +120,29 @@ struct LocationDetailView: View {
         }
         .sheet(isPresented: $showingMoveItemsHere) {
             MoveItemsHereSheet(destination: live, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showingAddItem) {
+            ItemFormSheet(
+                initialLocationId: live.id,
+                viewModel: viewModel,
+                onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, shareWith in
+                    Task {
+                        await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
+                        if let newItem = viewModel.items.last(where: { $0.name == name }) {
+                            if let itemPhotoData {
+                                await viewModel.setItemPhoto(for: newItem, imageData: itemPhotoData)
+                            }
+                            if let locationPhotoData {
+                                let refreshed = viewModel.items.first(where: { $0.id == newItem.id }) ?? newItem
+                                await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
+                            }
+                            for uid in shareWith {
+                                await viewModel.shareItem(newItem, withFriend: uid)
+                            }
+                        }
+                    }
+                }
+            )
         }
         .sheet(isPresented: $showShareSheet) {
             FriendShareSheet(
