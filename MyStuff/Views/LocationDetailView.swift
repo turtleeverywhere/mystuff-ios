@@ -10,6 +10,7 @@ struct LocationDetailView: View {
     @State private var showingQR = false
     @State private var detailItem: Item?
     @State private var showShareSheet = false
+    @State private var showingMoveItemsHere = false
 
     /// Follow live edits so the header/list update after Edit.
     private var live: Location {
@@ -59,6 +60,12 @@ struct LocationDetailView: View {
             }
 
             Section("Items") {
+                Button {
+                    showingMoveItemsHere = true
+                } label: {
+                    Label("Move items here", systemImage: "tray.and.arrow.down")
+                }
+
                 if directItems.isEmpty {
                     Text("No items here yet.").foregroundStyle(.secondary)
                 } else {
@@ -103,6 +110,9 @@ struct LocationDetailView: View {
         }
         .sheet(item: $detailItem) { item in
             ItemDetailSheet(item: item, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showingMoveItemsHere) {
+            MoveItemsHereSheet(destination: live, viewModel: viewModel)
         }
         .sheet(isPresented: $showShareSheet) {
             FriendShareSheet(
