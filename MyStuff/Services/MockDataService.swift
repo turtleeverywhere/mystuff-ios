@@ -111,6 +111,10 @@ final class MockDataService: DataService, @unchecked Sendable {
         locations.removeAll { $0.id == location.id }
     }
 
+    func addShareEvent(_ event: ShareEvent) async throws {
+        // No-op: mock data has no notification backend.
+    }
+
     // MARK: - Categories
 
     func fetchCategories(source: FetchSource) async throws -> [Category] {

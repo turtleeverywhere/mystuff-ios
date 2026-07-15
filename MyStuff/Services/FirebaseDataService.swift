@@ -140,6 +140,12 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
         try await locationsCollection(owner: owner(of: location.ownerId)).document(location.id).delete()
     }
 
+    // MARK: - Share Events
+
+    func addShareEvent(_ event: ShareEvent) async throws {
+        try db.collection("shareEvents").document(event.id).setData(from: event)
+    }
+
     // MARK: - Categories
 
     func fetchCategories(source: FetchSource) async throws -> [Category] {

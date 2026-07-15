@@ -9,6 +9,9 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
     var ownerId: String?
     /// `[ownerId] + sharedWith`. The array queried for visibility. nil on legacy docs until migrated.
     var memberIds: [String]?
+    /// Transient marker set on every write in a coalesced share/move batch. Cloud Functions
+    /// use it to suppress per-doc push notifications (one summary push covers the batch).
+    var shareBatchId: String?
     var createdAt: Date
 
     init(
@@ -18,6 +21,7 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
         parentId: String? = nil,
         ownerId: String? = nil,
         memberIds: [String]? = nil,
+        shareBatchId: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -26,6 +30,7 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
         self.parentId = parentId
         self.ownerId = ownerId
         self.memberIds = memberIds
+        self.shareBatchId = shareBatchId
         self.createdAt = createdAt
     }
 

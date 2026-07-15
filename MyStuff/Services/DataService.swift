@@ -42,6 +42,9 @@ protocol DataService: Sendable {
     func updateLocation(_ location: Location) async throws
     func deleteLocation(_ location: Location) async throws
 
+    // MARK: - Share Events
+    func addShareEvent(_ event: ShareEvent) async throws
+
     // MARK: - Categories
 
     func fetchCategories(source: FetchSource) async throws -> [Category]

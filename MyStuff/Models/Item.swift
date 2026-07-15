@@ -24,6 +24,10 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var ownerId: String?
     /// `[ownerId] + sharedWith`. The array queried for visibility. nil on legacy docs until migrated.
     var memberIds: [String]?
+    /// Transient marker set on every write in a coalesced share/move batch. Cloud Functions
+    /// use it to suppress per-doc push notifications (one summary push covers the batch).
+    /// Optional so legacy docs missing the field decode cleanly.
+    var shareBatchId: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -42,6 +46,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         isPrivate: Bool? = nil,
         ownerId: String? = nil,
         memberIds: [String]? = nil,
+        shareBatchId: String? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -59,6 +64,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.isPrivate = isPrivate
         self.ownerId = ownerId
         self.memberIds = memberIds
+        self.shareBatchId = shareBatchId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
