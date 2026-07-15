@@ -118,17 +118,31 @@ final class StuffViewModel {
             excluded = []
         }
 
+        // Seed roots the same way as `rootLocations` / LocationsView.visibleEntries: a location
+        // is a root if it has no parent OR its parent isn't visible to me (a shared location
+        // whose parent wasn't shared). Walking only from parentId == nil would silently drop
+        // those orphaned shared locations from every picker.
+        let visibleIds = Set(locations.map(\.id))
         var result: [(Location, Int)] = []
-        func walk(_ parentId: String?, depth: Int) {
+        func walk(_ location: Location, depth: Int) {
+            result.append((location, depth))
             let children = locations
-                .filter { $0.parentId == parentId && !excluded.contains($0.id) }
+                .filter { $0.parentId == location.id && !excluded.contains($0.id) }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             for child in children {
-                result.append((child, depth))
-                walk(child.id, depth: depth + 1)
+                walk(child, depth: depth + 1)
             }
         }
-        walk(nil, depth: 0)
+        let roots = locations
+            .filter { loc in
+                guard !excluded.contains(loc.id) else { return false }
+                guard let pid = loc.parentId else { return true }
+                return !visibleIds.contains(pid)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        for root in roots {
+            walk(root, depth: 0)
+        }
         return result
     }
 
