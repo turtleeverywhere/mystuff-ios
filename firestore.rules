@@ -65,5 +65,10 @@ service cloud.firestore {
         && (request.auth.uid == resource.data.fromUid
             || request.auth.uid == resource.data.toUid);
     }
+
+    match /shareEvents/{eventId} {
+      // Client only creates its own share events; the Cloud Function reads via admin.
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
   }
 }
