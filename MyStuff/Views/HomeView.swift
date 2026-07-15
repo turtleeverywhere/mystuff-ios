@@ -678,6 +678,7 @@ struct MoveItemSheet: View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
         let itemMembers = viewModel.sharedMembers(of: liveItem)
         guard let locationId,
+              viewModel.canManageSharing(of: liveItem),
               !itemMembers.isEmpty,
               let location = viewModel.locations.first(where: { $0.id == locationId }) else {
             onMove(locationId)

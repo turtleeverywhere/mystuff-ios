@@ -9,6 +9,7 @@ struct FriendShareSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var shared: Set<String>
+    @State private var busy = false
 
     init(title: String, friends: [Friend], sharedWith: Set<String>, onToggle: @escaping (String, Bool) async -> Void) {
         self.title = title
@@ -33,7 +34,11 @@ struct FriendShareSheet: View {
                             Button {
                                 let willShare = !shared.contains(friend.uid)
                                 if willShare { shared.insert(friend.uid) } else { shared.remove(friend.uid) }
-                                Task { await onToggle(friend.uid, willShare) }
+                                busy = true
+                                Task {
+                                    await onToggle(friend.uid, willShare)
+                                    busy = false
+                                }
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -49,6 +54,7 @@ struct FriendShareSheet: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .disabled(busy)
                         }
                     }
                 }

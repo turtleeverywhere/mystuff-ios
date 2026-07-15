@@ -17,6 +17,10 @@ struct ItemDetailSheet: View {
     @State private var pairOverwritePrevious: String?
     @State private var showShareSheet = false
 
+    private var liveItem: Item {
+        viewModel.items.first(where: { $0.id == item.id }) ?? item
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -34,11 +38,11 @@ struct ItemDetailSheet: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if viewModel.canManageSharing(of: item) {
+                    if viewModel.canManageSharing(of: liveItem) {
                         Button {
                             showShareSheet = true
                         } label: {
-                            Image(systemName: viewModel.isShared(item) ? "person.2.fill" : "person.2")
+                            Image(systemName: viewModel.isShared(liveItem) ? "person.2.fill" : "person.2")
                         }
                     }
                 }
