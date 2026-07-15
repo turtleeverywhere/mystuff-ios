@@ -37,6 +37,10 @@ struct ContentView: View {
             await viewModel.loadData()
         }
         .task {
+            PushNotificationManager.shared.requestAuthorization()
+            PushNotificationManager.shared.saveTokenIfPossible()
+        }
+        .task {
             social.onUnfriend = { friendUid in
                 await viewModel.unshareEverything(withFriend: friendUid)
             }

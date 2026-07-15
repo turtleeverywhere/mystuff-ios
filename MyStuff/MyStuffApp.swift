@@ -7,6 +7,7 @@ import GoogleSignIn
 struct MyStuffApp: App {
 
     @State private var authService: AuthService
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         FirebaseApp.configure()
