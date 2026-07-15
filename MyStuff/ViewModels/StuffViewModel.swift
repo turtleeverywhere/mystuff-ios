@@ -33,6 +33,8 @@ final class StuffViewModel {
     // private let storageService: StorageService = MockStorageService()
     private let storageService: StorageService = FirebaseStorageService()
 
+    @ObservationIgnored private var syncTasks: [Task<Void, Never>] = []
+
     // MARK: - Computed
 
     var filteredItems: [Item] {
@@ -219,6 +221,39 @@ final class StuffViewModel {
         // Wire up offline photo upload handler + process any pending uploads
         setupPhotoUploadHandler()
         await uploadManager.processPending()
+    }
+
+    /// Start real-time listeners so shared/edited items, locations, and categories update live.
+    /// Idempotent; call after `loadData()`. Cancel via `stopLiveSync()`.
+    func startLiveSync() {
+        guard syncTasks.isEmpty else { return }
+        let currentUid = service.currentUserId
+        let service = self.service
+
+        syncTasks.append(Task { [weak self] in
+            for await raw in service.itemsStream() {
+                guard let self else { return }
+                self.items = Self.deduped(Self.migratedPhotoFields(raw).map { Self.migratedSharingFields($0, currentUid: currentUid) })
+            }
+        })
+        syncTasks.append(Task { [weak self] in
+            for await raw in service.locationsStream() {
+                guard let self else { return }
+                self.locations = Self.deduped(raw.map { Self.migratedSharingFields($0, currentUid: currentUid) })
+            }
+        })
+        syncTasks.append(Task { [weak self] in
+            for await raw in service.categoriesStream() {
+                guard let self else { return }
+                self.categories = Self.deduped(raw)
+            }
+        })
+    }
+
+    /// Cancel live-sync tasks (removes the underlying Firestore listeners via stream termination).
+    func stopLiveSync() {
+        syncTasks.forEach { $0.cancel() }
+        syncTasks.removeAll()
     }
 
     // MARK: - Photo schema migration

@@ -36,6 +36,10 @@ struct ContentView: View {
         .background(LinearGradient.appBackground.ignoresSafeArea())
         .task {
             await viewModel.loadData()
+            viewModel.startLiveSync()
+        }
+        .onDisappear {
+            viewModel.stopLiveSync()
         }
         .task {
             PushNotificationManager.shared.requestAuthorization()
