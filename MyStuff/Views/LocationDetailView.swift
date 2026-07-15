@@ -145,22 +145,7 @@ struct LocationDetailView: View {
             )
         }
         .sheet(isPresented: $showShareSheet) {
-            FriendShareSheet(
-                title: "Share \"\(live.name)\"",
-                friends: viewModel.friends,
-                sharedWith: Set(viewModel.sharedMembers(of: live)),
-                onToggle: { uid, share in
-                    if share {
-                        await viewModel.shareLocation(live, withFriend: uid)
-                        // Convenience: also share the location's direct items with this friend.
-                        for item in viewModel.items(for: live) where viewModel.canManageSharing(of: item) {
-                            await viewModel.shareItem(item, withFriend: uid)
-                        }
-                    } else {
-                        await viewModel.unshareLocation(live, fromFriend: uid)
-                    }
-                }
-            )
+            LocationShareSheet(location: live, viewModel: viewModel)
         }
         .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
