@@ -607,8 +607,8 @@ final class StuffViewModel {
     /// additively propagate the destination's members across the moved subtree — the moved
     /// location, its descendant locations, and every item within — but only for entities the
     /// current user owns. The moved location's membership is written together with its new
-    /// parentId so the parent/child membership stays consistent (Firestore rules reject a
-    /// non-shared child under a shared parent). Additive only: moving out never removes members.
+    /// parentId in one update so the moved location becomes visible to the destination's
+    /// collaborators atomically with the reparent. Additive only: moving out never removes members.
     func moveLocation(_ location: Location, toParentId newParentId: String?) async {
         guard var moved = locations.first(where: { $0.id == location.id }) else { return }
 
@@ -625,7 +625,7 @@ final class StuffViewModel {
         }
 
         do {
-            // Reparent (+ membership) of the moved location in a single write.
+            // Reparent + membership in one write.
             try await service.updateLocation(moved)
             if let i = locations.firstIndex(where: { $0.id == moved.id }) { locations[i] = moved }
 
@@ -635,26 +635,28 @@ final class StuffViewModel {
 
                 // Descendant locations (skip the moved location itself, already written).
                 for locId in subtreeIds where locId != moved.id {
-                    guard let li = locations.firstIndex(where: { $0.id == locId }),
-                          canManageSharing(of: locations[li]) else { continue }
-                    let current = locations[li].members
+                    guard let loc = locations.first(where: { $0.id == locId }),
+                          canManageSharing(of: loc) else { continue }
+                    let current = loc.members
                     guard !destSet.isSubset(of: Set(current)) else { continue }
-                    var u = locations[li]
+                    var u = loc
                     u.memberIds = Array(Set(current + destMembers))
                     try await service.updateLocation(u)
-                    locations[li] = u
+                    if let i = locations.firstIndex(where: { $0.id == locId }) { locations[i] = u }
                 }
 
-                // Items anywhere in the moved subtree.
-                for ii in items.indices where subtreeIds.contains(items[ii].locationId ?? "") {
-                    guard canManageSharing(of: items[ii]) else { continue }
-                    let current = items[ii].members
+                // Items anywhere in the moved subtree (snapshot ids first; re-find after each await).
+                let subtreeItemIds = items.filter { subtreeIds.contains($0.locationId ?? "") }.map(\.id)
+                for itemId in subtreeItemIds {
+                    guard let it = items.first(where: { $0.id == itemId }),
+                          canManageSharing(of: it) else { continue }
+                    let current = it.members
                     guard !destSet.isSubset(of: Set(current)) else { continue }
-                    var u = items[ii]
+                    var u = it
                     u.memberIds = Array(Set(current + destMembers))
                     u.updatedAt = .now
                     try await service.updateItem(u)
-                    items[ii] = u
+                    if let i = items.firstIndex(where: { $0.id == itemId }) { items[i] = u }
                 }
             }
             HapticManager.success()
