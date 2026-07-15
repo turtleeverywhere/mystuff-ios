@@ -36,11 +36,7 @@ struct ContentView: View {
         .background(LinearGradient.appBackground.ignoresSafeArea())
         .task {
             await viewModel.loadData()
-            viewModel.startLiveSync()
-        }
-        .onDisappear {
-            viewModel.stopLiveSync()
-            social.stopLiveSync()
+            await viewModel.liveSync()
         }
         .task {
             PushNotificationManager.shared.requestAuthorization()
@@ -52,7 +48,7 @@ struct ContentView: View {
             }
             await social.load()
             viewModel.friends = social.friends
-            social.startLiveSync()
+            await social.liveSync()
         }
         .onChange(of: social.friends) {
             viewModel.friends = social.friends

@@ -33,8 +33,6 @@ final class StuffViewModel {
     // private let storageService: StorageService = MockStorageService()
     private let storageService: StorageService = FirebaseStorageService()
 
-    @ObservationIgnored private var syncTasks: [Task<Void, Never>] = []
-
     // MARK: - Computed
 
     var filteredItems: [Item] {
@@ -223,37 +221,35 @@ final class StuffViewModel {
         await uploadManager.processPending()
     }
 
-    /// Start real-time listeners so shared/edited items, locations, and categories update live.
-    /// Idempotent; call after `loadData()`. Cancel via `stopLiveSync()`.
-    func startLiveSync() {
-        guard syncTasks.isEmpty else { return }
+    /// Real-time listeners for items/locations/categories. Runs until the caller's task is
+    /// cancelled (e.g. the SwiftUI `.task` when the view disappears), which terminates the
+    /// underlying Firestore listeners. Call as `await viewModel.liveSync()`.
+    func liveSync() async {
         let currentUid = service.currentUserId
         let service = self.service
-
-        syncTasks.append(Task { [weak self] in
-            for await raw in service.itemsStream() {
-                guard let self else { return }
-                self.items = Self.deduped(Self.migratedPhotoFields(raw).map { Self.migratedSharingFields($0, currentUid: currentUid) })
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await raw in service.itemsStream() {
+                    await MainActor.run {
+                        self.items = Self.deduped(Self.migratedPhotoFields(raw).map { Self.migratedSharingFields($0, currentUid: currentUid) })
+                    }
+                }
             }
-        })
-        syncTasks.append(Task { [weak self] in
-            for await raw in service.locationsStream() {
-                guard let self else { return }
-                self.locations = Self.deduped(raw.map { Self.migratedSharingFields($0, currentUid: currentUid) })
+            group.addTask {
+                for await raw in service.locationsStream() {
+                    await MainActor.run {
+                        self.locations = Self.deduped(raw.map { Self.migratedSharingFields($0, currentUid: currentUid) })
+                    }
+                }
             }
-        })
-        syncTasks.append(Task { [weak self] in
-            for await raw in service.categoriesStream() {
-                guard let self else { return }
-                self.categories = Self.deduped(raw)
+            group.addTask {
+                for await raw in service.categoriesStream() {
+                    await MainActor.run {
+                        self.categories = Self.deduped(raw)
+                    }
+                }
             }
-        })
-    }
-
-    /// Cancel live-sync tasks (removes the underlying Firestore listeners via stream termination).
-    func stopLiveSync() {
-        syncTasks.forEach { $0.cancel() }
-        syncTasks.removeAll()
+        }
     }
 
     // MARK: - Photo schema migration
