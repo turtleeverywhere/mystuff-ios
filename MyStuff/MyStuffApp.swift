@@ -44,7 +44,6 @@ struct MyStuffApp: App {
             ZStack {
                 LinearGradient.appBackground.ignoresSafeArea()
                 RootView(authService: authService)
-                    .foregroundStyle(Color.appText)
             }
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
