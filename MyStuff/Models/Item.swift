@@ -16,6 +16,10 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var remoteItemPhotoURL: String?
     var locationChangedAt: Date?
     var nfcTagUID: String?
+    /// When true, automatic member-propagation flows (e.g. moveLocation subtree share)
+    /// skip this item. Manual sharing is unaffected. Optional so legacy docs missing the
+    /// field decode cleanly — same idiom as ownerId/memberIds.
+    var isPrivate: Bool?
     /// Owner's uid. Writes route to `users/{ownerId}/items`. nil on legacy docs until migrated.
     var ownerId: String?
     /// `[ownerId] + sharedWith`. The array queried for visibility. nil on legacy docs until migrated.
@@ -35,6 +39,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         remoteItemPhotoURL: String? = nil,
         locationChangedAt: Date? = nil,
         nfcTagUID: String? = nil,
+        isPrivate: Bool? = nil,
         ownerId: String? = nil,
         memberIds: [String]? = nil,
         createdAt: Date = .now,
@@ -51,6 +56,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.remoteItemPhotoURL = remoteItemPhotoURL
         self.locationChangedAt = locationChangedAt
         self.nfcTagUID = nfcTagUID
+        self.isPrivate = isPrivate
         self.ownerId = ownerId
         self.memberIds = memberIds
         self.createdAt = createdAt
