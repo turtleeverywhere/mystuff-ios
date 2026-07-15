@@ -40,6 +40,7 @@ struct ContentView: View {
         }
         .onDisappear {
             viewModel.stopLiveSync()
+            social.stopLiveSync()
         }
         .task {
             PushNotificationManager.shared.requestAuthorization()
@@ -51,6 +52,7 @@ struct ContentView: View {
             }
             await social.load()
             viewModel.friends = social.friends
+            social.startLiveSync()
         }
         .onChange(of: social.friends) {
             viewModel.friends = social.friends

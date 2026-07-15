@@ -16,6 +16,7 @@ final class SocialViewModel {
     var errorMessage: String?
 
     private let service: SocialService = FirebaseSocialService()
+    @ObservationIgnored private var syncTasks: [Task<Void, Never>] = []
 
     /// Set by ContentView: called on unfriend to strip shared memberIds between the two users.
     var onUnfriend: ((String) async -> Void)?
@@ -42,6 +43,40 @@ final class SocialViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Start real-time listeners so friends, incoming/outgoing requests, and the badge update live.
+    /// Idempotent; call after `load()`. Cancel via `stopLiveSync()`.
+    func startLiveSync() {
+        guard syncTasks.isEmpty else { return }
+
+        let service = self.service
+
+        syncTasks.append(Task { [weak self] in
+            for await friends in service.friendsStream() {
+                guard let self else { return }
+                self.friends = friends
+            }
+        })
+        syncTasks.append(Task { [weak self] in
+            for await incoming in service.incomingRequestsStream() {
+                guard let self else { return }
+                self.incomingRequests = incoming.filter { $0.status == .pending }
+            }
+        })
+        syncTasks.append(Task { [weak self] in
+            for await outgoing in service.outgoingRequestsStream() {
+                guard let self else { return }
+                self.outgoingRequests = outgoing.filter { $0.status == .pending }
+                await self.reconcileAcceptedOutgoing(outgoing: outgoing, existingFriends: self.friends)
+            }
+        })
+    }
+
+    /// Cancel live-sync tasks (removes the underlying Firestore listeners).
+    func stopLiveSync() {
+        syncTasks.forEach { $0.cancel() }
+        syncTasks.removeAll()
     }
 
     private func upsertOwnProfile() async {
