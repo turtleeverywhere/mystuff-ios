@@ -567,6 +567,9 @@ struct HomeView: View {
             .buttonStyle(.plain)
 
             Spacer()
+            if item.nfcTagUID != nil {
+                NFCBadge(iconOnly: true)
+            }
             tag
 
             Button {
@@ -796,14 +799,17 @@ struct LocationPhotoPreviewSheet: View {
         NavigationStack {
             Group {
                 if liveItem.hasLocationPhoto {
-                    PhotoView(item: liveItem, kind: .location, size: .full) { image in
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .padding()
-                    } placeholder: {
-                        ProgressView()
+                    VStack(spacing: 0) {
+                        PhotoView(item: liveItem, kind: .location, size: .full) { image in
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .padding()
+                        } placeholder: {
+                            ProgressView()
+                        }
+                        storageInfo(for: liveItem)
                     }
                 } else {
                     ContentUnavailableView("No photo", systemImage: "photo")
@@ -817,6 +823,33 @@ struct LocationPhotoPreviewSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func storageInfo(for item: Item) -> some View {
+        VStack(spacing: 6) {
+            if let location = viewModel.location(for: item) {
+                Label {
+                    Text(viewModel.locationPath(for: location).map(\.name).joined(separator: " › "))
+                } icon: {
+                    Text(location.emoji ?? "📍")
+                }
+                .font(.subheadline)
+            } else {
+                Label("Unassigned", systemImage: "questionmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let changedAt = item.locationChangedAt {
+                Text("Stored \(changedAt, format: .dateTime.weekday().day().month().year().hour().minute())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(.ultraThinMaterial)
     }
 }
 

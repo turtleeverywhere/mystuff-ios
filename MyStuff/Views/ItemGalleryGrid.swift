@@ -114,6 +114,12 @@ private struct GalleryTile: View {
             .overlay(alignment: .bottom) {
                 nameOverlay
             }
+            .overlay(alignment: .topTrailing) {
+                if item.nfcTagUID != nil {
+                    NFCBadge(iconOnly: true)
+                        .padding(6)
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
             .onTapGesture {

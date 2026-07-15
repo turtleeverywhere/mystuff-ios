@@ -15,7 +15,11 @@ struct ItemDetailSheet: View {
     @State private var isPairing = false
     @State private var nfcErrorMessage: String?
     @State private var pairOverwritePrevious: String?
+    @State private var showUnpairConfirmation = false
     @State private var showShareSheet = false
+    @State private var showMoveScanner = false
+    @State private var unknownScan = false
+    @State private var pendingMove: (locationId: String, location: Location, missing: [String])?
 
     private var liveItem: Item {
         viewModel.items.first(where: { $0.id == item.id }) ?? item
@@ -27,6 +31,7 @@ struct ItemDetailSheet: View {
                 VStack(spacing: 20) {
                     photoSection
                     infoSection
+                    moveSection
                     nfcSection
                 }
                 .padding()
@@ -89,6 +94,17 @@ struct ItemDetailSheet: View {
                 Task { await viewModel.deletePhoto(for: item) }
             }
         }
+        .confirmationDialog(
+            "Unpair NFC tag from \"\(item.name)\"?",
+            isPresented: $showUnpairConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Unpair Tag", role: .destructive) {
+                Task { await viewModel.clearNFCTag(itemId: item.id) }
+            }
+        } message: {
+            Text("The tag will no longer be linked to this item. You can re-pair it anytime.")
+        }
         .sheet(isPresented: $showPhotoSource) {
             PhotoSourceSheet(
                 onCamera: { showCamera = true },
@@ -105,6 +121,46 @@ struct ItemDetailSheet: View {
                 }
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showMoveScanner) {
+            QRScannerSheet { locationId in
+                if viewModel.locations.contains(where: { $0.id == locationId }) {
+                    performMove(toLocationId: locationId)
+                } else {
+                    unknownScan = true
+                }
+            }
+        }
+        .alert("Location not found", isPresented: $unknownScan) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("That QR points to a location that no longer exists.")
+        }
+        .confirmationDialog(
+            pendingMove.map { "\"\(item.name)\" is shared, but \($0.location.name) isn't." } ?? "",
+            isPresented: Binding(
+                get: { pendingMove != nil },
+                set: { if !$0 { pendingMove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let pending = pendingMove {
+                Button("Share \(pending.location.name) too") {
+                    Task {
+                        await viewModel.addMembers(pending.missing, toLocation: pending.location)
+                        await viewModel.moveItem(liveItem, toLocationId: pending.locationId)
+                        pendingMove = nil
+                    }
+                }
+                Button("Make item private", role: .destructive) {
+                    Task {
+                        await viewModel.makeItemPrivate(liveItem)
+                        await viewModel.moveItem(liveItem, toLocationId: pending.locationId)
+                        pendingMove = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingMove = nil }
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             let live = viewModel.items.first(where: { $0.id == item.id }) ?? item
@@ -217,7 +273,7 @@ struct ItemDetailSheet: View {
 
                 if liveItem.nfcTagUID != nil {
                     Button(role: .destructive) {
-                        Task { await viewModel.clearNFCTag(itemId: item.id) }
+                        showUnpairConfirmation = true
                     } label: {
                         Label("Unpair Tag", systemImage: "wave.3.right.slash")
                             .frame(maxWidth: .infinity)
@@ -295,6 +351,71 @@ struct ItemDetailSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Move Section
+
+    private var moveSection: some View {
+        Menu {
+            Button {
+                performMove(toLocationId: nil)
+            } label: {
+                Label("Unassigned", systemImage: "questionmark.circle")
+            }
+
+            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+                Button {
+                    performMove(toLocationId: entry.location.id)
+                } label: {
+                    Label {
+                        Text(String(repeating: "   ", count: entry.depth) + entry.location.name)
+                    } icon: {
+                        Text(entry.location.emoji ?? "📍")
+                    }
+                }
+            }
+
+            if QRScannerView.isSupported {
+                Divider()
+                Button {
+                    showMoveScanner = true
+                } label: {
+                    Label("Scan Location QR", systemImage: "qrcode.viewfinder")
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle")
+                Text("Move to Location")
+                    .fontWeight(.medium)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    /// Move the live item, prompting first if it's shared with members the target location lacks.
+    private func performMove(toLocationId locationId: String?) {
+        let live = liveItem
+        let itemMembers = viewModel.sharedMembers(of: live)
+        guard let locationId,
+              viewModel.canManageSharing(of: live),
+              !itemMembers.isEmpty,
+              let location = viewModel.locations.first(where: { $0.id == locationId }) else {
+            Task { await viewModel.moveItem(live, toLocationId: locationId) }
+            return
+        }
+        let missing = viewModel.membersMissing(from: location, forItemMembers: itemMembers)
+        if missing.isEmpty {
+            Task { await viewModel.moveItem(live, toLocationId: locationId) }
+        } else {
+            pendingMove = (locationId, location, missing)
+        }
     }
 }
 

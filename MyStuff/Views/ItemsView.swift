@@ -176,6 +176,9 @@ struct ItemsView: View {
                                 }
                             }
                             Spacer()
+                            if item.nfcTagUID != nil {
+                                NFCBadge(iconOnly: true)
+                            }
                             categoryBadge(for: item)
                             locationBadge(for: item)
                             sharedBadge(for: item)
