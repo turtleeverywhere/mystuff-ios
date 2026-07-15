@@ -667,7 +667,7 @@ final class StuffViewModel {
             var movedSubCount = 0
             var movedItemCount = 0
 
-            if propagating {
+            if !destMembers.isEmpty {
                 let subtreeIds = allDescendantIds(of: location.id).union([location.id])
                 let destSet = Set(destMembers)
 
@@ -679,10 +679,10 @@ final class StuffViewModel {
                     guard !destSet.isSubset(of: Set(current)) else { continue }
                     var u = loc
                     u.memberIds = Array(Set(current + destMembers))
-                    u.shareBatchId = batchId
+                    if propagating { u.shareBatchId = batchId }
                     try await service.updateLocation(u)
                     if let i = locations.firstIndex(where: { $0.id == locId }) { locations[i] = u }
-                    movedSubCount += 1
+                    if propagating { movedSubCount += 1 }
                 }
 
                 // Items anywhere in the moved subtree (snapshot ids first; re-find after each await).
@@ -696,25 +696,30 @@ final class StuffViewModel {
                     guard !destSet.isSubset(of: Set(current)) else { continue }
                     var u = it
                     u.memberIds = Array(Set(current + destMembers))
-                    u.shareBatchId = batchId
+                    if propagating { u.shareBatchId = batchId }
                     u.updatedAt = .now
                     try await service.updateItem(u)
                     if let i = items.firstIndex(where: { $0.id == itemId }) { items[i] = u }
-                    movedItemCount += 1
+                    if propagating { movedItemCount += 1 }
                 }
 
-                // One coalesced push per recipient who newly gains the moved root.
-                let owner = moved.ownerId ?? currentUserId
-                let recipients = destSet.subtracting(preMembers).subtracting([owner])
-                for uid in recipients {
-                    try await service.addShareEvent(ShareEvent(
-                        ownerId: currentUserId,
-                        recipientUid: uid,
-                        locationId: moved.id,
-                        locationName: moved.name,
-                        itemCount: movedItemCount,
-                        sublocationCount: movedSubCount
-                    ))
+                // One coalesced push per recipient who newly gains the moved root — only when we
+                // shared the moved root ourselves (propagating). In the rare non-owner-move case,
+                // descendant writes carry no shareBatchId and fall back to per-doc pushes, matching
+                // pre-coalescing behavior.
+                if propagating {
+                    let owner = moved.ownerId ?? currentUserId
+                    let recipients = destSet.subtracting(preMembers).subtracting([owner])
+                    for uid in recipients {
+                        try await service.addShareEvent(ShareEvent(
+                            ownerId: currentUserId,
+                            recipientUid: uid,
+                            locationId: moved.id,
+                            locationName: moved.name,
+                            itemCount: movedItemCount,
+                            sublocationCount: movedSubCount
+                        ))
+                    }
                 }
             }
             HapticManager.success()
