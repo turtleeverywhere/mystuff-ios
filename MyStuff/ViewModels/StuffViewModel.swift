@@ -662,8 +662,11 @@ final class StuffViewModel {
                 // Items anywhere in the moved subtree (snapshot ids first; re-find after each await).
                 let subtreeItemIds = items.filter { subtreeIds.contains($0.locationId ?? "") }.map(\.id)
                 for itemId in subtreeItemIds {
+                    // Always-private items opt out of automatic member propagation.
+                    // Any future auto-share-item flow must apply the same guard.
                     guard let it = items.first(where: { $0.id == itemId }),
-                          canManageSharing(of: it) else { continue }
+                          canManageSharing(of: it),
+                          it.isPrivate != true else { continue }
                     let current = it.members
                     guard !destSet.isSubset(of: Set(current)) else { continue }
                     var u = it
@@ -770,6 +773,17 @@ final class StuffViewModel {
     func makeItemPrivate(_ item: Item) async {
         guard var updated = items.first(where: { $0.id == item.id }) else { return }
         updated.memberIds = [updated.ownerId ?? currentUserId]
+        await persistItemMembers(updated)
+    }
+
+    /// Set or clear the always-private flag. Enabling also resets the item to private
+    /// (members = [owner]) in a single write; disabling only clears the flag.
+    func setItemPrivate(_ item: Item, _ isPrivate: Bool) async {
+        guard var updated = items.first(where: { $0.id == item.id }) else { return }
+        updated.isPrivate = isPrivate
+        if isPrivate {
+            updated.memberIds = [updated.ownerId ?? currentUserId]
+        }
         await persistItemMembers(updated)
     }
 
