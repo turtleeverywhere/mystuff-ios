@@ -41,4 +41,16 @@ final class MockSocialService: SocialService, @unchecked Sendable {
     func removeFriend(uid: String) async throws {
         friends.removeAll { $0.uid == uid }
     }
+
+    // MARK: - Live streams
+
+    func friendsStream() -> AsyncStream<[Friend]> {
+        AsyncStream { continuation in continuation.yield(friends); continuation.finish() }
+    }
+    func incomingRequestsStream() -> AsyncStream<[FriendRequest]> {
+        AsyncStream { continuation in continuation.yield(incoming); continuation.finish() }
+    }
+    func outgoingRequestsStream() -> AsyncStream<[FriendRequest]> {
+        AsyncStream { continuation in continuation.yield(outgoing); continuation.finish() }
+    }
 }

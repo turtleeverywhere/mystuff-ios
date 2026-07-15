@@ -24,6 +24,11 @@ protocol SocialService: Sendable {
     func addFriend(_ friend: Friend) async throws
     /// Delete my friend subdoc for `uid`.
     func removeFriend(uid: String) async throws
+
+    // MARK: - Live streams
+    func friendsStream() -> AsyncStream<[Friend]>
+    func incomingRequestsStream() -> AsyncStream<[FriendRequest]>
+    func outgoingRequestsStream() -> AsyncStream<[FriendRequest]>
 }
 
 enum SocialError: LocalizedError {

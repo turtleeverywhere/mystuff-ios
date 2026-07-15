@@ -97,4 +97,39 @@ final class FirebaseSocialService: SocialService, @unchecked Sendable {
     func removeFriend(uid: String) async throws {
         try await friendsCollection(currentUserId).document(uid).delete()
     }
+
+    // MARK: - Live streams
+
+    func friendsStream() -> AsyncStream<[Friend]> {
+        let query = friendsCollection(currentUserId)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: Friend.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
+
+    func incomingRequestsStream() -> AsyncStream<[FriendRequest]> {
+        let query = requestsCollection.whereField("toUid", isEqualTo: currentUserId)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: FriendRequest.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
+
+    func outgoingRequestsStream() -> AsyncStream<[FriendRequest]> {
+        let query = requestsCollection.whereField("fromUid", isEqualTo: currentUserId)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: FriendRequest.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
 }
