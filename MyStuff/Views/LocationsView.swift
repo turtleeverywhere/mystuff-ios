@@ -8,6 +8,7 @@ struct LocationsView: View {
     @State private var path: [Location] = []
     @State private var showingScanner = false
     @State private var addingSublocationParent: Location?
+    @State private var movingLocation: Location?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -62,6 +63,20 @@ struct LocationsView: View {
                     onSave: { name, emoji, parentId in
                         Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
                         if let parentId { expandedIds.insert(parentId) }
+                    }
+                )
+            }
+            .sheet(item: $movingLocation) { location in
+                MoveLocationSheet(
+                    location: location,
+                    viewModel: viewModel,
+                    onMove: { newParentId in
+                        Task {
+                            var updated = viewModel.locations.first(where: { $0.id == location.id }) ?? location
+                            updated.parentId = newParentId
+                            await viewModel.updateLocation(updated)
+                        }
+                        if let newParentId { expandedIds.insert(newParentId) }
                     }
                 )
             }
@@ -187,6 +202,11 @@ struct LocationsView: View {
                     } label: {
                         Label("Add Sub-location", systemImage: "plus")
                     }
+                    Button {
+                        movingLocation = entry.location
+                    } label: {
+                        Label("Move", systemImage: "folder")
+                    }
                 }
                 .padding(.leading, CGFloat(entry.depth) * 24)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -293,6 +313,67 @@ struct LocationFormSheet: View {
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Move Location Sheet
+
+struct MoveLocationSheet: View {
+    let location: Location
+    let viewModel: StuffViewModel
+    let onMove: (String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    var body: some View {
+        // Detents are ignored in regular width (iPad form sheet); use page sizing there instead.
+        if horizontalSizeClass == .regular {
+            content.presentationSizing(.page)
+        } else {
+            content.presentationDetents([.medium])
+        }
+    }
+
+    private func select(parentId: String?) {
+        onMove(parentId)
+        dismiss()
+    }
+
+    private var content: some View {
+        NavigationStack {
+            List {
+                Section("Move \"\(location.name)\" to…") {
+                    Button {
+                        select(parentId: nil)
+                    } label: {
+                        Label("Root (top level)", systemImage: "house")
+                    }
+                    .tint(location.parentId == nil ? .accentColor : .primary)
+
+                    ForEach(viewModel.flattenedLocationTree(excluding: location.id), id: \.location.id) { entry in
+                        Button {
+                            select(parentId: entry.location.id)
+                        } label: {
+                            Label {
+                                Text(entry.location.name)
+                            } icon: {
+                                Text(entry.location.emoji ?? "📍")
+                            }
+                        }
+                        .tint(entry.location.id == location.parentId ? .accentColor : .primary)
+                        .padding(.leading, CGFloat(entry.depth) * 20)
+                    }
+                }
+            }
+            .navigationTitle("Move Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }
