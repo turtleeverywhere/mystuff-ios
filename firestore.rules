@@ -25,6 +25,10 @@ service cloud.firestore {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
 
+      match /fcmTokens/{tokenId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+
       match /categories/{categoryId} {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
