@@ -151,9 +151,26 @@ exports.onShareEventCreated = functions.firestore
     .document("shareEvents/{eventId}")
     .onCreate(async (snap) => {
       const e = snap.data();
-      if (!e || !e.recipientUid || !e.ownerId) return;
+      if (!e || !e.recipientUid || !e.ownerId || !e.locationId) {
+        await snap.ref.delete().catch(() => {});
+        return;
+      }
+      // The event doc is client-created and only checked for ownerId by rules.
+      // Verify the recipient genuinely gained access to this location before
+      // notifying — otherwise a signed-in user could push arbitrary text to
+      // any uid. Use the location doc's real name, not the client-supplied one.
+      const locSnap = await admin.firestore()
+          .collection("users").doc(e.ownerId)
+          .collection("locations").doc(e.locationId)
+          .get();
+      const locData = locSnap.exists ? locSnap.data() : null;
+      const members = (locData && locData.memberIds) || [];
+      if (!members.includes(e.recipientUid)) {
+        await snap.ref.delete().catch(() => {});
+        return;
+      }
       const name = await displayNameFor(e.ownerId);
-      const locName = e.locationName || "a location";
+      const locName = (locData && locData.name) || "a location";
       const items = Number(e.itemCount) || 0;
       const subs = Number(e.sublocationCount) || 0;
       const parts = [];
@@ -163,6 +180,8 @@ exports.onShareEventCreated = functions.firestore
       await sendPushToUser(
           e.recipientUid,
           {title: "Location shared with you", body: `${name} shared "${locName}"${suffix}`},
-          {type: "locationShared", locationId: e.locationId || ""},
+          {type: "locationShared", locationId: e.locationId},
       );
+      // Ephemeral: the event existed only to trigger this push.
+      await snap.ref.delete().catch(() => {});
     });
