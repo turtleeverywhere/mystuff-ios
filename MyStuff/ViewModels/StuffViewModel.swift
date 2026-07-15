@@ -581,6 +581,28 @@ final class StuffViewModel {
         }
     }
 
+    /// Move several items to the same location in one pass. Unlike calling `moveItem`
+    /// per item, this fires a single success haptic for the whole batch.
+    func moveItems(_ items: [Item], toLocationId: String?) async {
+        guard !items.isEmpty else { return }
+        let ids = Set(items.map(\.id))
+        do {
+            for id in ids {
+                guard var updated = self.items.first(where: { $0.id == id }) else { continue }
+                updated.locationId = toLocationId
+                updated.locationChangedAt = .now
+                updated.updatedAt = .now
+                try await service.updateItem(updated)
+                if let index = self.items.firstIndex(where: { $0.id == id }) {
+                    self.items[index] = updated
+                }
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Location CRUD
 
     func addLocation(name: String, emoji: String?, parentId: String? = nil) async {
