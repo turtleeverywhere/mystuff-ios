@@ -16,6 +16,10 @@ final class StuffViewModel {
     var categories: [Category] = []
     var selectedGrouping: GroupingMode = .location
 
+    /// Mirror of SocialViewModel.friends, synced by ContentView — lets sharing UI read
+    /// friends off the already-threaded StuffViewModel without a SocialViewModel reference.
+    var friends: [Friend] = []
+
     enum GroupingMode: String, CaseIterable {
         case location = "Location"
         case category = "Category"
@@ -59,7 +63,12 @@ final class StuffViewModel {
     // MARK: - Location Tree
 
     var rootLocations: [Location] {
-        locations.filter { $0.parentId == nil }
+        let visibleIds = Set(locations.map(\.id))
+        return locations.filter { loc in
+            // Root, or a shared child whose parent isn't visible to me (show it at root).
+            guard let pid = loc.parentId else { return true }
+            return !visibleIds.contains(pid)
+        }
     }
 
     func childLocations(for location: Location) -> [Location] {
@@ -657,6 +666,14 @@ final class StuffViewModel {
         updated.memberIds = members
         await persistLocationMembers(updated)
     }
+
+    func friend(forUid uid: String) -> Friend? {
+        friends.first { $0.uid == uid }
+    }
+
+    /// Sharing controls are owner-only — you can't reshare someone else's entity.
+    func canManageSharing(of item: Item) -> Bool { !isSharedWithMe(item) }
+    func canManageSharing(of location: Location) -> Bool { !isSharedWithMe(location) }
 
     /// Persist a membership change on an item. If the change removed *me* from the members,
     /// drop it from local state (it will no longer be returned by my collectionGroup query).

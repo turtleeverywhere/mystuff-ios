@@ -41,6 +41,10 @@ struct ContentView: View {
                 await viewModel.unshareEverything(withFriend: friendUid)
             }
             await social.load()
+            viewModel.friends = social.friends
+        }
+        .onChange(of: social.friends) {
+            viewModel.friends = social.friends
         }
         .sheet(isPresented: $showingProfile) {
             ProfileSheet(authService: authService, social: social)
