@@ -165,6 +165,22 @@ final class StuffViewModel {
         return result
     }
 
+    /// Descendant locations under `location`, depth-first, with depth relative to `location`
+    /// (direct children = 0). Drives the "Choose sublocations" checklist.
+    func flattenedDescendantLocations(of location: Location) -> [(location: Location, depth: Int)] {
+        var result: [(Location, Int)] = []
+        func walk(_ loc: Location, depth: Int) {
+            let children = childLocations(for: loc)
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            for child in children {
+                result.append((child, depth))
+                walk(child, depth: depth + 1)
+            }
+        }
+        walk(location, depth: 0)
+        return result
+    }
+
     // MARK: - Category Computed
 
     var uncategorizedItems: [Item] {
@@ -808,6 +824,110 @@ final class StuffViewModel {
         for uid in uids where !members.contains(uid) { members.append(uid) }
         updated.memberIds = members
         await persistLocationMembers(updated)
+    }
+
+    /// Which sublocations to include when sharing a location tree.
+    enum SublocationScope: Equatable {
+        case locationOnly
+        case all
+        case selected(Set<String>)
+    }
+
+    /// Share `location` (and scoped sublocations + their items) with `uid`, coalescing the
+    /// recipient's notifications into a single `ShareEvent`. Skips entities I can't manage and
+    /// always-private items. Assumes the caller only invokes this when `uid` is not yet a member
+    /// of the root (toggle-on path).
+    func shareLocationTree(_ location: Location, withFriend uid: String, scope: SublocationScope) async {
+        let batchId = UUID().uuidString
+
+        let subIds: Set<String>
+        switch scope {
+        case .locationOnly: subIds = []
+        case .all: subIds = allDescendantIds(of: location.id)
+        case .selected(let ids): subIds = ids
+        }
+        // Root + scoped sublocations, restricted to ones I own/manage.
+        let targetLocationIds = ([location.id] + subIds).filter { id in
+            guard let loc = locations.first(where: { $0.id == id }) else { return false }
+            return canManageSharing(of: loc)
+        }
+        let targetSet = Set(targetLocationIds)
+
+        var sharedSubCount = 0
+        var sharedItemCount = 0
+        do {
+            // Locations (only those that don't already include uid).
+            for id in targetLocationIds {
+                guard var loc = locations.first(where: { $0.id == id }), !loc.members.contains(uid) else { continue }
+                loc.memberIds = loc.members + [uid]
+                loc.shareBatchId = batchId
+                try await service.updateLocation(loc)
+                if let i = locations.firstIndex(where: { $0.id == id }) { locations[i] = loc }
+                if id != location.id { sharedSubCount += 1 }
+            }
+            // Items in any target location — skip private + not-manageable + already-shared.
+            let shareableItems = items.filter {
+                targetSet.contains($0.locationId ?? "")
+                    && $0.isPrivate != true
+                    && canManageSharing(of: $0)
+                    && !$0.members.contains(uid)
+            }
+            for item in shareableItems {
+                guard var it = items.first(where: { $0.id == item.id }) else { continue }
+                it.memberIds = it.members + [uid]
+                it.shareBatchId = batchId
+                it.updatedAt = .now
+                try await service.updateItem(it)
+                if let i = items.firstIndex(where: { $0.id == it.id }) { items[i] = it }
+                sharedItemCount += 1
+            }
+            try await service.addShareEvent(ShareEvent(
+                ownerId: currentUserId,
+                recipientUid: uid,
+                locationId: location.id,
+                locationName: location.name,
+                itemCount: sharedItemCount,
+                sublocationCount: sharedSubCount
+            ))
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Remove `uid` from `location`, all descendant locations, and all their items.
+    func unshareLocationTree(_ location: Location, fromFriend uid: String) async {
+        let ids = allDescendantIds(of: location.id).union([location.id])
+        do {
+            for id in ids {
+                guard var loc = locations.first(where: { $0.id == id }),
+                      loc.members.contains(uid), canManageSharing(of: loc) else { continue }
+                loc.memberIds = loc.members.filter { $0 != uid }
+                try await service.updateLocation(loc)
+                if loc.members.contains(currentUserId) {
+                    if let i = locations.firstIndex(where: { $0.id == id }) { locations[i] = loc }
+                } else {
+                    locations.removeAll { $0.id == id }
+                }
+            }
+            let treeItems = items.filter {
+                ids.contains($0.locationId ?? "") && $0.members.contains(uid) && canManageSharing(of: $0)
+            }
+            for item in treeItems {
+                guard var it = items.first(where: { $0.id == item.id }) else { continue }
+                it.memberIds = it.members.filter { $0 != uid }
+                it.updatedAt = .now
+                try await service.updateItem(it)
+                if it.members.contains(currentUserId) {
+                    if let i = items.firstIndex(where: { $0.id == it.id }) { items[i] = it }
+                } else {
+                    items.removeAll { $0.id == it.id }
+                }
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func friend(forUid uid: String) -> Friend? {
