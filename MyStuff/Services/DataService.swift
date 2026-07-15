@@ -23,6 +23,11 @@ protocol DataService: Sendable {
     /// Read the current user's OWN locations subcollection directly.
     func fetchOwnLocations() async throws -> [Location]
 
+    // MARK: - Live streams (emit on every change; first value is the current snapshot)
+    func itemsStream() -> AsyncStream<[Item]>
+    func locationsStream() -> AsyncStream<[Location]>
+    func categoriesStream() -> AsyncStream<[Category]>
+
     // MARK: - Items
 
     func fetchItems(source: FetchSource) async throws -> [Item]

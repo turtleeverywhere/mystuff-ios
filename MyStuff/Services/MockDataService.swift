@@ -52,6 +52,25 @@ final class MockDataService: DataService, @unchecked Sendable {
     func fetchOwnItems() async throws -> [Item] { items }
     func fetchOwnLocations() async throws -> [Location] { locations }
 
+    func itemsStream() -> AsyncStream<[Item]> {
+        AsyncStream { continuation in
+            continuation.yield(items)
+            continuation.finish()
+        }
+    }
+    func locationsStream() -> AsyncStream<[Location]> {
+        AsyncStream { continuation in
+            continuation.yield(locations)
+            continuation.finish()
+        }
+    }
+    func categoriesStream() -> AsyncStream<[Category]> {
+        AsyncStream { continuation in
+            continuation.yield(categories)
+            continuation.finish()
+        }
+    }
+
     func addItem(_ item: Item) async throws {
         var item = item
         if item.ownerId == nil { item.ownerId = currentUserId }

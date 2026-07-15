@@ -59,6 +59,45 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
         return try snapshot.documents.map { try $0.data(as: Location.self) }
     }
 
+    // MARK: - Live streams
+
+    func itemsStream() -> AsyncStream<[Item]> {
+        let query = db.collectionGroup("items")
+            .whereField("memberIds", arrayContains: uid)
+            .order(by: "createdAt", descending: true)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: Item.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
+
+    func locationsStream() -> AsyncStream<[Location]> {
+        let query = db.collectionGroup("locations")
+            .whereField("memberIds", arrayContains: uid)
+            .order(by: "createdAt", descending: true)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: Location.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
+
+    func categoriesStream() -> AsyncStream<[Category]> {
+        let query = categoriesCollection.order(by: "createdAt", descending: true)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            nonisolated(unsafe) let listener = query.addSnapshotListener { snapshot, _ in
+                guard let snapshot else { return }
+                continuation.yield(snapshot.documents.compactMap { try? $0.data(as: Category.self) })
+            }
+            continuation.onTermination = { _ in listener.remove() }
+        }
+    }
+
     func addItem(_ item: Item) async throws {
         var item = item
         let owner = owner(of: item.ownerId)
