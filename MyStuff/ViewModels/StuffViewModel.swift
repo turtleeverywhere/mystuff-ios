@@ -649,9 +649,14 @@ final class StuffViewModel {
             destMembers = []
         }
 
+        let batchId = UUID().uuidString
+        let preMembers = Set(moved.members)
+
         moved.parentId = newParentId
-        if !destMembers.isEmpty, canManageSharing(of: moved) {
+        let propagating = !destMembers.isEmpty && canManageSharing(of: moved)
+        if propagating {
             moved.memberIds = Array(Set(moved.members + destMembers))
+            moved.shareBatchId = batchId
         }
 
         do {
@@ -659,7 +664,10 @@ final class StuffViewModel {
             try await service.updateLocation(moved)
             if let i = locations.firstIndex(where: { $0.id == moved.id }) { locations[i] = moved }
 
-            if !destMembers.isEmpty {
+            var movedSubCount = 0
+            var movedItemCount = 0
+
+            if propagating {
                 let subtreeIds = allDescendantIds(of: location.id).union([location.id])
                 let destSet = Set(destMembers)
 
@@ -671,15 +679,16 @@ final class StuffViewModel {
                     guard !destSet.isSubset(of: Set(current)) else { continue }
                     var u = loc
                     u.memberIds = Array(Set(current + destMembers))
+                    u.shareBatchId = batchId
                     try await service.updateLocation(u)
                     if let i = locations.firstIndex(where: { $0.id == locId }) { locations[i] = u }
+                    movedSubCount += 1
                 }
 
                 // Items anywhere in the moved subtree (snapshot ids first; re-find after each await).
                 let subtreeItemIds = items.filter { subtreeIds.contains($0.locationId ?? "") }.map(\.id)
                 for itemId in subtreeItemIds {
                     // Always-private items opt out of automatic member propagation.
-                    // Any future auto-share-item flow must apply the same guard.
                     guard let it = items.first(where: { $0.id == itemId }),
                           canManageSharing(of: it),
                           it.isPrivate != true else { continue }
@@ -687,9 +696,25 @@ final class StuffViewModel {
                     guard !destSet.isSubset(of: Set(current)) else { continue }
                     var u = it
                     u.memberIds = Array(Set(current + destMembers))
+                    u.shareBatchId = batchId
                     u.updatedAt = .now
                     try await service.updateItem(u)
                     if let i = items.firstIndex(where: { $0.id == itemId }) { items[i] = u }
+                    movedItemCount += 1
+                }
+
+                // One coalesced push per recipient who newly gains the moved root.
+                let owner = moved.ownerId ?? currentUserId
+                let recipients = destSet.subtracting(preMembers).subtracting([owner])
+                for uid in recipients {
+                    try await service.addShareEvent(ShareEvent(
+                        ownerId: currentUserId,
+                        recipientUid: uid,
+                        locationId: moved.id,
+                        locationName: moved.name,
+                        itemCount: movedItemCount,
+                        sublocationCount: movedSubCount
+                    ))
                 }
             }
             HapticManager.success()
