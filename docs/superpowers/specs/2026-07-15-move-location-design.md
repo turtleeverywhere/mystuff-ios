@@ -8,7 +8,8 @@ In the Locations tab, long-pressing a location currently offers only **Add Sub-l
 
 - **In:** "Move" context-menu item + a dedicated `MoveLocationSheet` picker.
 - **In:** Move any *visible* location, including locations shared with the user.
-- **Out (YAGNI):** share-membership reconciliation on move (matches current Add Sub-location behavior); QR-scan-to-move; multi-select move; drag-and-drop reordering.
+- **In (revision, 2026-07-15):** share-membership propagation on move — see "Revision: share propagation" below.
+- **Out (YAGNI):** QR-scan-to-move; multi-select move; drag-and-drop reordering.
 
 ## UI
 
@@ -57,6 +58,28 @@ Because the sheet needs to mutate `LocationsView`'s `expandedIds`, the move/expa
 
 `StuffViewModel.updateLocation(_:)` already handles persistence and local state for a changed `parentId`. No new method required.
 
+## Revision: share propagation (2026-07-15)
+
+**Motivation:** Moving a location under a *shared* parent failed silently. The move wrote the child with `memberIds = [me]` while its new parent is shared; Firestore security rules reject the inconsistent parent/child membership, and the known "errorMessage-never-shown" bug hid the failure — so it looked like "can't move to a shared location." Users also want the moved location (a box) to become visible to the parent's collaborators automatically.
+
+**Behavior:** Introduce `StuffViewModel.moveLocation(_ location: Location, toParentId newParentId: String?) async` as the single move entry point. It:
+
+1. Reparents the location (`parentId = newParentId`).
+2. Resolves `destMembers` = the new parent's `members` (empty when moving to root).
+3. When `destMembers` is non-empty, **additively** unions those members into `memberIds` of every entity in the moved subtree that the current user owns (`canManageSharing == true`):
+   - the moved location itself — its membership is set in the **same write** as the reparent, which is what satisfies the security rules and unblocks the move;
+   - every descendant location (`allDescendantIds(of: location.id)`);
+   - every item whose `locationId` is the moved location or any descendant.
+4. Skips entities owned by someone else, and skips writes where the union adds no new members.
+5. Moving to **root** (`newParentId == nil`) changes no membership.
+6. **Additive only** — moving a shared location out to root or a private parent never removes members (users un-share manually via the share sheet).
+
+Membership union is order-insensitive because `ownerId` is a separate field, so `Array(Set(existing + destMembers))` is used.
+
+**UI:** The picker is unchanged (shared locations already appear via `flattenedLocationTree`). `MoveLocationSheet` gains a section footer: "Moving into a shared location shares this location and its contents with the same people." The sheet's `onMove` closure calls `moveLocation` instead of `updateLocation`; `expandedIds.insert(newParentId)` stays in the view.
+
+**Pattern precedent:** owner-managed, additive membership union already used by `MoveItemsHereSheet.confirmMove` (`addMembers`) and the `LocationDetailView` share flow.
+
 ## Testing
 
 No test target exists in this project. Manual verification:
@@ -67,3 +90,6 @@ No test target exists in this project. Manual verification:
 4. Current parent (or Root, when already root) row shows accent tint.
 5. A location shared with you can be moved.
 6. iPad: sheet renders as a page-sized form; iPhone: medium detent.
+7. Move a private location (with items + a sub-location containing items) under a location shared with a friend → the move succeeds, and the moved location, its sub-location, and all their items gain the friend as a member (collaborator sees the whole box). Verify from the friend's account if possible.
+8. Move that now-shared location back to root → it stays shared (additive-only; membership unchanged).
+9. Move a location under a **private** parent or to root → no membership changes.
