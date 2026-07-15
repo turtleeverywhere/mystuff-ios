@@ -739,8 +739,7 @@ struct MoveItemSheet: View {
             .sheet(isPresented: $showingScanner) {
                 QRScannerSheet { locationId in
                     if viewModel.locations.contains(where: { $0.id == locationId }) {
-                        onMove(locationId)
-                        dismiss()
+                        selectMove(toLocationId: locationId)
                     } else {
                         unknownScan = true
                     }
