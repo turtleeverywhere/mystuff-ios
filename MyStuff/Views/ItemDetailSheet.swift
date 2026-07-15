@@ -33,6 +33,7 @@ struct ItemDetailSheet: View {
                     infoSection
                     moveSection
                     nfcSection
+                    privacySection
                 }
                 .padding()
             }
@@ -316,6 +317,33 @@ struct ItemDetailSheet: View {
                 nfcErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    // MARK: - Privacy Section
+
+    private var privacySection: some View {
+        let isPrivate = Binding(
+            get: { liveItem.isPrivate == true },
+            set: { newValue in
+                Task { await viewModel.setItemPrivate(liveItem, newValue) }
+            }
+        )
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: isPrivate) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock")
+                        .foregroundStyle(.tint)
+                    Text("Always private")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+            }
+            Text("Excluded from automatic sharing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Info Section
