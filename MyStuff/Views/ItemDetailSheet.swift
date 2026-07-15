@@ -15,6 +15,7 @@ struct ItemDetailSheet: View {
     @State private var isPairing = false
     @State private var nfcErrorMessage: String?
     @State private var pairOverwritePrevious: String?
+    @State private var showShareSheet = false
 
     var body: some View {
         NavigationStack {
@@ -31,6 +32,15 @@ struct ItemDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if viewModel.canManageSharing(of: item) {
+                        Button {
+                            showShareSheet = true
+                        } label: {
+                            Image(systemName: viewModel.isShared(item) ? "person.2.fill" : "person.2")
+                        }
+                    }
                 }
             }
             .alert("NFC Error", isPresented: Binding(
@@ -91,6 +101,18 @@ struct ItemDetailSheet: View {
                 }
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showShareSheet) {
+            let live = viewModel.items.first(where: { $0.id == item.id }) ?? item
+            FriendShareSheet(
+                title: "Share \"\(live.name)\"",
+                friends: viewModel.friends,
+                sharedWith: Set(viewModel.sharedMembers(of: live)),
+                onToggle: { uid, share in
+                    if share { await viewModel.shareItem(live, withFriend: uid) }
+                    else { await viewModel.unshareItem(live, fromFriend: uid) }
+                }
+            )
         }
     }
 

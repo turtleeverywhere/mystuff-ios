@@ -9,6 +9,8 @@ struct LocationDetailView: View {
     @State private var showingEdit = false
     @State private var showingQR = false
     @State private var detailItem: Item?
+    @State private var showShareSheet = false
+    @State private var shareIncludeItems = false
 
     /// Follow live edits so the header/list update after Edit.
     private var live: Location {
@@ -70,6 +72,11 @@ struct LocationDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                if viewModel.canManageSharing(of: live) {
+                    Button { showShareSheet = true } label: {
+                        Image(systemName: viewModel.isShared(live) ? "person.2.fill" : "person.2")
+                    }
+                }
                 Button { showingQR = true } label: { Image(systemName: "qrcode") }
                 Button("Edit") { showingEdit = true }
             }
@@ -92,6 +99,24 @@ struct LocationDetailView: View {
         }
         .sheet(item: $detailItem) { item in
             ItemDetailSheet(item: item, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showShareSheet) {
+            FriendShareSheet(
+                title: "Share \"\(live.name)\"",
+                friends: viewModel.friends,
+                sharedWith: Set(viewModel.sharedMembers(of: live)),
+                onToggle: { uid, share in
+                    if share {
+                        await viewModel.shareLocation(live, withFriend: uid)
+                        // Convenience: also share the location's direct items with this friend.
+                        for item in viewModel.items(for: live) where viewModel.canManageSharing(of: item) {
+                            await viewModel.shareItem(item, withFriend: uid)
+                        }
+                    } else {
+                        await viewModel.unshareLocation(live, fromFriend: uid)
+                    }
+                }
+            )
         }
         .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
