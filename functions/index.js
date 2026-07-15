@@ -56,8 +56,9 @@ async function sendPushToUser(uid, notification, data) {
   resp.responses.forEach((r, i) => {
     if (!r.success) {
       const code = r.error && r.error.code;
-      if (code === "messaging/registration-token-not-registered" ||
-          code === "messaging/invalid-argument") {
+      // Only prune tokens FCM says are truly unregistered. (invalid-argument is
+      // ambiguous — a bad message payload would otherwise nuke every token.)
+      if (code === "messaging/registration-token-not-registered") {
         dead.push(tokens[i]);
       }
     }
