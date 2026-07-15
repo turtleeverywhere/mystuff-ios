@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var deepLinkedItem: Item?
     @State private var pendingLocationId: String?
     @State private var deepLinkedLocation: Location?
+    private let push = PushNotificationManager.shared
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -70,6 +71,25 @@ struct ContentView: View {
         .onChange(of: viewModel.locations) { resolvePendingDeepLink() }
         .onChange(of: pendingNFCItemId) { resolvePendingDeepLink() }
         .onChange(of: pendingLocationId) { resolvePendingDeepLink() }
+        .onChange(of: push.pendingItemId) {
+            if let id = push.pendingItemId {
+                pendingNFCItemId = id
+                push.pendingItemId = nil
+            }
+        }
+        .onChange(of: push.pendingLocationId) {
+            if let id = push.pendingLocationId {
+                pendingLocationId = id
+                push.pendingLocationId = nil
+            }
+        }
+        .onChange(of: push.openFriends) {
+            if push.openFriends {
+                selectedTab = 0
+                showingProfile = true
+                push.openFriends = false
+            }
+        }
     }
 
     private func handleDeepLink(_ url: URL) {
