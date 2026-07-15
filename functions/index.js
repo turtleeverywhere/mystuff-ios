@@ -111,10 +111,15 @@ function newlyAddedMembers(before, after, ownerId) {
 exports.onItemUpdated = functions.firestore
     .document("users/{ownerId}/items/{itemId}")
     .onUpdate(async (change, context) => {
-      const added = newlyAddedMembers(change.before.data(), change.after.data(), context.params.ownerId);
+      const before = change.before.data();
+      const after = change.after.data();
+      const added = newlyAddedMembers(before, after, context.params.ownerId);
       if (added.length === 0) return;
+      // Coalesced location/move shares tag every write with a fresh shareBatchId;
+      // a single shareEvents push covers them, so suppress the per-item push.
+      if (after.shareBatchId && after.shareBatchId !== before.shareBatchId) return;
       const name = await displayNameFor(context.params.ownerId);
-      const itemName = change.after.data().name || "an item";
+      const itemName = after.name || "an item";
       await Promise.all(added.map((uid) => sendPushToUser(
           uid,
           {title: "Item shared with you", body: `${name} shared "${itemName}"`},
@@ -126,13 +131,38 @@ exports.onItemUpdated = functions.firestore
 exports.onLocationUpdated = functions.firestore
     .document("users/{ownerId}/locations/{locationId}")
     .onUpdate(async (change, context) => {
-      const added = newlyAddedMembers(change.before.data(), change.after.data(), context.params.ownerId);
+      const before = change.before.data();
+      const after = change.after.data();
+      const added = newlyAddedMembers(before, after, context.params.ownerId);
       if (added.length === 0) return;
+      // Coalesced shares/moves are covered by a single shareEvents push.
+      if (after.shareBatchId && after.shareBatchId !== before.shareBatchId) return;
       const name = await displayNameFor(context.params.ownerId);
-      const locName = change.after.data().name || "a location";
+      const locName = after.name || "a location";
       await Promise.all(added.map((uid) => sendPushToUser(
           uid,
           {title: "Location shared with you", body: `${name} shared "${locName}"`},
           {type: "locationShared", locationId: context.params.locationId},
       )));
+    });
+
+/** Coalesced location/subtree share → exactly one push to the recipient. */
+exports.onShareEventCreated = functions.firestore
+    .document("shareEvents/{eventId}")
+    .onCreate(async (snap) => {
+      const e = snap.data();
+      if (!e || !e.recipientUid || !e.ownerId) return;
+      const name = await displayNameFor(e.ownerId);
+      const locName = e.locationName || "a location";
+      const items = Number(e.itemCount) || 0;
+      const subs = Number(e.sublocationCount) || 0;
+      const parts = [];
+      if (items > 0) parts.push(`${items} item${items === 1 ? "" : "s"}`);
+      if (subs > 0) parts.push(`${subs} sublocation${subs === 1 ? "" : "s"}`);
+      const suffix = parts.length ? ` (${parts.join(", ")})` : "";
+      await sendPushToUser(
+          e.recipientUid,
+          {title: "Location shared with you", body: `${name} shared "${locName}"${suffix}`},
+          {type: "locationShared", locationId: e.locationId || ""},
+      );
     });
