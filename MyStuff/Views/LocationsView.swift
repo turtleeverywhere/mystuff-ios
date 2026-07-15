@@ -71,11 +71,7 @@ struct LocationsView: View {
                     location: location,
                     viewModel: viewModel,
                     onMove: { newParentId in
-                        Task {
-                            var updated = viewModel.locations.first(where: { $0.id == location.id }) ?? location
-                            updated.parentId = newParentId
-                            await viewModel.updateLocation(updated)
-                        }
+                        Task { await viewModel.moveLocation(location, toParentId: newParentId) }
                         if let newParentId { expandedIds.insert(newParentId) }
                     }
                 )
@@ -346,7 +342,7 @@ struct MoveLocationSheet: View {
     private var content: some View {
         NavigationStack {
             List {
-                Section("Move \"\(location.name)\" to…") {
+                Section {
                     Button {
                         select(parentId: nil)
                     } label: {
@@ -367,6 +363,10 @@ struct MoveLocationSheet: View {
                         .tint(entry.location.id == location.parentId ? .accentColor : .primary)
                         .padding(.leading, CGFloat(entry.depth) * 20)
                     }
+                } header: {
+                    Text("Move \"\(location.name)\" to…")
+                } footer: {
+                    Text("Moving into a shared location shares this location and its contents with the same people.")
                 }
             }
             .navigationTitle("Move Location")
