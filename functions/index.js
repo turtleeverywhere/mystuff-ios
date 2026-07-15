@@ -92,3 +92,46 @@ exports.onFriendRequestUpdated = functions.firestore
         );
       }
     });
+
+/** Owner's display name for share notifications. */
+async function displayNameFor(uid) {
+  const doc = await admin.firestore().collection("users").doc(uid).get();
+  return (doc.exists && doc.data().displayName) || "Someone";
+}
+
+/** uids added to memberIds by this update, excluding the owner. */
+function newlyAddedMembers(before, after, ownerId) {
+  const beforeM = (before && before.memberIds) || [];
+  const afterM = (after && after.memberIds) || [];
+  return afterM.filter((u) => !beforeM.includes(u) && u !== ownerId);
+}
+
+/** Item shared with new members → notify each. */
+exports.onItemUpdated = functions.firestore
+    .document("users/{ownerId}/items/{itemId}")
+    .onUpdate(async (change, context) => {
+      const added = newlyAddedMembers(change.before.data(), change.after.data(), context.params.ownerId);
+      if (added.length === 0) return;
+      const name = await displayNameFor(context.params.ownerId);
+      const itemName = change.after.data().name || "an item";
+      await Promise.all(added.map((uid) => sendPushToUser(
+          uid,
+          {title: "Item shared with you", body: `${name} shared "${itemName}"`},
+          {type: "itemShared", itemId: context.params.itemId},
+      )));
+    });
+
+/** Location shared with new members → notify each. */
+exports.onLocationUpdated = functions.firestore
+    .document("users/{ownerId}/locations/{locationId}")
+    .onUpdate(async (change, context) => {
+      const added = newlyAddedMembers(change.before.data(), change.after.data(), context.params.ownerId);
+      if (added.length === 0) return;
+      const name = await displayNameFor(context.params.ownerId);
+      const locName = change.after.data().name || "a location";
+      await Promise.all(added.map((uid) => sendPushToUser(
+          uid,
+          {title: "Location shared with you", body: `${name} shared "${locName}"`},
+          {type: "locationShared", locationId: context.params.locationId},
+      )));
+    });
