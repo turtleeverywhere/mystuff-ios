@@ -413,6 +413,12 @@ struct ItemFormSheet: View {
     private let unassignedSentinel = "__unassigned__"
     private let uncategorizedSentinel = "__uncategorized__"
 
+    /// Live item from the view model (reflects immediate privacy changes), or nil in create mode.
+    private var liveItem: Item? {
+        guard let item else { return nil }
+        return viewModel.items.first(where: { $0.id == item.id }) ?? item
+    }
+
     init(
         item: Item? = nil,
         viewModel: StuffViewModel,
@@ -550,6 +556,21 @@ struct ItemFormSheet: View {
 
                     Button("New Category...") {
                         showingNewCategory = true
+                    }
+                }
+
+                // Edit-only, owner-only. Acts immediately (reuses setItemPrivate,
+                // which resets to private on enable and no-ops for non-owners).
+                if let liveItem, viewModel.canManageSharing(of: liveItem) {
+                    Section {
+                        Toggle("Always private", isOn: Binding(
+                            get: { liveItem.isPrivate == true },
+                            set: { newValue in
+                                Task { await viewModel.setItemPrivate(liveItem, newValue) }
+                            }
+                        ))
+                    } footer: {
+                        Text("Excluded from automatic sharing.")
                     }
                 }
 
