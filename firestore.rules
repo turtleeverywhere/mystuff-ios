@@ -42,6 +42,19 @@ service cloud.firestore {
       }
     }
 
+    // Collection-group reads. REQUIRED to authorize the
+    // `collectionGroup("items"/"locations").where("memberIds","array-contains",uid)` query:
+    // the nested per-user rules above cannot secure a collection-group query because their
+    // read condition references the parent {uid} path segment. These data-only rules let
+    // Firestore prove, from the query's array-contains constraint alone, that every result
+    // is readable. Writes still go through the nested per-user rules (single-doc paths).
+    match /{path=**}/items/{itemId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberIds;
+    }
+    match /{path=**}/locations/{locationId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.memberIds;
+    }
+
     match /friendRequests/{requestId} {
       allow create: if signedIn() && request.resource.data.fromUid == request.auth.uid;
       allow read, update: if signedIn()
