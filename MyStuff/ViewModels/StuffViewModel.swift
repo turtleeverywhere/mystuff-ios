@@ -779,7 +779,7 @@ final class StuffViewModel {
     /// Set or clear the always-private flag. Enabling also resets the item to private
     /// (members = [owner]) in a single write; disabling only clears the flag.
     func setItemPrivate(_ item: Item, _ isPrivate: Bool) async {
-        guard var updated = items.first(where: { $0.id == item.id }) else { return }
+        guard var updated = items.first(where: { $0.id == item.id }), canManageSharing(of: updated) else { return }
         updated.isPrivate = isPrivate
         if isPrivate {
             updated.memberIds = [updated.ownerId ?? currentUserId]
