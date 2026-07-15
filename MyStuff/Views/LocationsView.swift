@@ -92,21 +92,34 @@ struct LocationsView: View {
 
     // MARK: - Locations List
 
-    /// Visible locations based on expanded state
+    /// Visible locations based on expanded state. Locations whose parent isn't visible to the
+    /// current user (e.g. a shared sub-location whose parent wasn't shared) are treated as roots
+    /// so they still appear — mirrors StuffViewModel.rootLocations (used by the Home tab).
     private var visibleEntries: [(location: Location, depth: Int)] {
+        let visibleIds = Set(viewModel.locations.map(\.id))
         var result: [(Location, Int)] = []
-        func walk(_ parentId: String?, depth: Int) {
-            let children = viewModel.locations
+        func children(of parentId: String) -> [Location] {
+            viewModel.locations
                 .filter { $0.parentId == parentId }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            for child in children {
-                result.append((child, depth))
-                if expandedIds.contains(child.id) {
-                    walk(child.id, depth: depth + 1)
+        }
+        func walk(_ location: Location, depth: Int) {
+            result.append((location, depth))
+            if expandedIds.contains(location.id) {
+                for child in children(of: location.id) {
+                    walk(child, depth: depth + 1)
                 }
             }
         }
-        walk(nil, depth: 0)
+        let roots = viewModel.locations
+            .filter { loc in
+                guard let pid = loc.parentId else { return true }
+                return !visibleIds.contains(pid)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        for root in roots {
+            walk(root, depth: 0)
+        }
         return result
     }
 
