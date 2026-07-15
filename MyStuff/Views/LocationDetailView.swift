@@ -10,7 +10,6 @@ struct LocationDetailView: View {
     @State private var showingQR = false
     @State private var detailItem: Item?
     @State private var showShareSheet = false
-    @State private var shareIncludeItems = false
 
     /// Follow live edits so the header/list update after Edit.
     private var live: Location {
@@ -36,6 +35,11 @@ struct LocationDetailView: View {
                         Text(live.name).font(.title2.weight(.semibold))
                         Text("\(viewModel.recursiveItemCount(for: live)) items")
                             .font(.caption).foregroundStyle(.secondary)
+                        if viewModel.isSharedWithMe(live) {
+                            SharedBadge(ownerName: viewModel.friend(forUid: live.ownerId ?? "")?.displayName)
+                        } else if viewModel.isShared(live) {
+                            SharedBadge()
+                        }
                     }
                     Spacer()
                 }

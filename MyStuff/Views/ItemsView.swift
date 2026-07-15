@@ -178,6 +178,7 @@ struct ItemsView: View {
                             Spacer()
                             categoryBadge(for: item)
                             locationBadge(for: item)
+                            sharedBadge(for: item)
                         }
                     }
                     .buttonStyle(.plain)
@@ -300,6 +301,17 @@ struct ItemsView: View {
                     .padding(.vertical, 4)
                     .background(.ultraThinMaterial, in: Capsule())
             }
+        }
+    }
+
+    // MARK: - Shared Badge
+
+    @ViewBuilder
+    private func sharedBadge(for item: Item) -> some View {
+        if viewModel.isSharedWithMe(item) {
+            SharedBadge(ownerName: viewModel.friend(forUid: item.ownerId ?? "")?.displayName)
+        } else if viewModel.isShared(item) {
+            SharedBadge()
         }
     }
 

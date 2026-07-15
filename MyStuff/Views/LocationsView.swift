@@ -150,6 +150,11 @@ struct LocationsView: View {
                             Text(entry.location.name)
                                 .font(.body)
                                 .foregroundStyle(.primary)
+                            if viewModel.isSharedWithMe(entry.location) {
+                                SharedBadge(iconOnly: true, ownerName: viewModel.friend(forUid: entry.location.ownerId ?? "")?.displayName)
+                            } else if viewModel.isShared(entry.location) {
+                                SharedBadge(iconOnly: true)
+                            }
                             Spacer()
                             Text("\(viewModel.recursiveItemCount(for: entry.location)) items")
                                 .font(.caption)
