@@ -662,6 +662,7 @@ struct MoveItemSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showingScanner = false
     @State private var unknownScan = false
+    @State private var pendingMove: (locationId: String, location: Location, missing: [String])?
 
     var body: some View {
         // Detents are ignored in regular width (iPad form sheet); use page sizing there instead.
@@ -669,6 +670,26 @@ struct MoveItemSheet: View {
             content.presentationSizing(.page)
         } else {
             content.presentationDetents([.medium])
+        }
+    }
+
+    private func selectMove(toLocationId locationId: String?) {
+        // Unassigned or non-shared item → move straight away.
+        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+        let itemMembers = viewModel.sharedMembers(of: liveItem)
+        guard let locationId,
+              !itemMembers.isEmpty,
+              let location = viewModel.locations.first(where: { $0.id == locationId }) else {
+            onMove(locationId)
+            dismiss()
+            return
+        }
+        let missing = viewModel.membersMissing(from: location, forItemMembers: itemMembers)
+        if missing.isEmpty {
+            onMove(locationId)
+            dismiss()
+        } else {
+            pendingMove = (locationId, location, missing)
         }
     }
 
@@ -687,8 +708,7 @@ struct MoveItemSheet: View {
 
                 Section("Move \"\(item.name)\" to…") {
                     Button {
-                        onMove(nil)
-                        dismiss()
+                        selectMove(toLocationId: nil)
                     } label: {
                         Label("Unassigned", systemImage: "questionmark.circle")
                     }
@@ -696,8 +716,7 @@ struct MoveItemSheet: View {
 
                     ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
                         Button {
-                            onMove(entry.location.id)
-                            dismiss()
+                            selectMove(toLocationId: entry.location.id)
                         } label: {
                             Label {
                                 Text(entry.location.name)
@@ -731,6 +750,35 @@ struct MoveItemSheet: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("That QR points to a location that no longer exists.")
+            }
+            .confirmationDialog(
+                pendingMove.map { "\"\(item.name)\" is shared, but \($0.location.name) isn't." } ?? "",
+                isPresented: Binding(
+                    get: { pendingMove != nil },
+                    set: { if !$0 { pendingMove = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let pending = pendingMove {
+                    Button("Share \(pending.location.name) too") {
+                        Task {
+                            await viewModel.addMembers(pending.missing, toLocation: pending.location)
+                            onMove(pending.locationId)
+                            pendingMove = nil
+                            dismiss()
+                        }
+                    }
+                    Button("Make item private", role: .destructive) {
+                        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+                        Task {
+                            await viewModel.makeItemPrivate(liveItem)
+                            onMove(pending.locationId)
+                            pendingMove = nil
+                            dismiss()
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { pendingMove = nil }
+                }
             }
         }
     }
