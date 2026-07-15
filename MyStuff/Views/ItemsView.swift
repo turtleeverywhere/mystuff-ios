@@ -63,7 +63,7 @@ struct ItemsView: View {
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData in
+                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, shareWith in
                         Task {
                             await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
                             if let newItem = viewModel.items.last(where: { $0.name == name }) {
@@ -74,6 +74,9 @@ struct ItemsView: View {
                                     let refreshed = viewModel.items.first(where: { $0.id == newItem.id }) ?? newItem
                                     await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
                                 }
+                                for uid in shareWith {
+                                    await viewModel.shareItem(newItem, withFriend: uid)
+                                }
                             }
                         }
                     }
@@ -83,7 +86,7 @@ struct ItemsView: View {
                 ItemFormSheet(
                     item: item,
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData in
+                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, _ in
                         var updated = item
                         updated.name = name
                         updated.notes = notes
@@ -371,7 +374,7 @@ struct ItemPhotoPreviewSheet: View {
 struct ItemFormSheet: View {
     let item: Item?
     @Bindable var viewModel: StuffViewModel
-    let onSave: (String, String?, String?, String?, Data?, Data?) -> Void
+    let onSave: (String, String?, String?, String?, Data?, Data?, Set<String>) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -388,6 +391,7 @@ struct ItemFormSheet: View {
     @State private var showCamera = false
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var shareWith: Set<String>
 
     private enum PhotoTarget { case item, location }
 
@@ -397,7 +401,7 @@ struct ItemFormSheet: View {
     init(
         item: Item? = nil,
         viewModel: StuffViewModel,
-        onSave: @escaping (String, String?, String?, String?, Data?, Data?) -> Void
+        onSave: @escaping (String, String?, String?, String?, Data?, Data?, Set<String>) -> Void
     ) {
         self.item = item
         self.viewModel = viewModel
@@ -407,6 +411,7 @@ struct ItemFormSheet: View {
         _selectedLocationId = State(initialValue: item?.locationId ?? "__unassigned__")
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
         _useSameForLocation = State(initialValue: item == nil)
+        _shareWith = State(initialValue: [])
     }
 
     var body: some View {
@@ -532,6 +537,26 @@ struct ItemFormSheet: View {
                         showingNewCategory = true
                     }
                 }
+
+                if item == nil && !viewModel.friends.isEmpty {
+                    Section("Share with") {
+                        ForEach(viewModel.friends) { friend in
+                            Button {
+                                if shareWith.contains(friend.uid) { shareWith.remove(friend.uid) }
+                                else { shareWith.insert(friend.uid) }
+                            } label: {
+                                HStack {
+                                    Text(friend.displayName).foregroundStyle(.primary)
+                                    Spacer()
+                                    if shareWith.contains(friend.uid) {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
             .navigationTitle(item == nil ? "New Item" : "Edit Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -544,7 +569,7 @@ struct ItemFormSheet: View {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
                         let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
                         let resolvedLocationData: Data? = useSameForLocation ? photoData : locationPhotoData
-                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData, resolvedLocationData)
+                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData, resolvedLocationData, shareWith)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
