@@ -115,7 +115,7 @@ private struct GalleryTile: View {
                 nameOverlay
             }
             .overlay(alignment: .topTrailing) {
-                if item.nfcTagUID != nil {
+                if !item.pairedTags.isEmpty {
                     NFCBadge(iconOnly: true)
                         .padding(6)
                 }

@@ -567,7 +567,7 @@ struct HomeView: View {
             .buttonStyle(.plain)
 
             Spacer()
-            if item.nfcTagUID != nil {
+            if !item.pairedTags.isEmpty {
                 NFCBadge(iconOnly: true)
             }
             tag

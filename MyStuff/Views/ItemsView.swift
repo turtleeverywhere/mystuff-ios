@@ -176,7 +176,7 @@ struct ItemsView: View {
                                 }
                             }
                             Spacer()
-                            if item.nfcTagUID != nil {
+                            if !item.pairedTags.isEmpty {
                                 NFCBadge(iconOnly: true)
                             }
                             categoryBadge(for: item)

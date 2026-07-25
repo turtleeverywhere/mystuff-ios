@@ -188,6 +188,9 @@ struct LocationsView: View {
                             } else if viewModel.isShared(entry.location) {
                                 SharedBadge(iconOnly: true)
                             }
+                            if !entry.location.pairedTags.isEmpty {
+                                NFCBadge(iconOnly: true)
+                            }
                             Spacer()
                             Text("\(viewModel.recursiveItemCount(for: entry.location)) items")
                                 .font(.caption)
