@@ -116,7 +116,11 @@ A Locations section (existing indented tree) and an Items section, each with its
 ### 8. `QRScannerSheet` resolves targets
 
 ```swift
-QRScannerSheet(accepts: TargetKind = .any, onTarget: (AppLink.Target) -> Void)
+extension AppLink {
+    enum TargetKind { case any, item, location }
+}
+
+QRScannerSheet(accepts: AppLink.TargetKind = .any, onTarget: (AppLink.Target) -> Void)
 ```
 
 `accepts` filters what the scanner will resolve; a rejected kind keeps the existing inline-message-and-keep-scanning behavior. Call sites:
