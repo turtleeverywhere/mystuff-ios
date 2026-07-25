@@ -18,6 +18,7 @@ struct ItemDetailSheet: View {
     @State private var showUnpairConfirmation = false
     @State private var showShareSheet = false
     @State private var showMoveScanner = false
+    @State private var showLocationSearch = false
     @State private var unknownScan = false
     @State private var pendingMove: (locationId: String, location: Location, missing: [String])?
 
@@ -130,6 +131,11 @@ struct ItemDetailSheet: View {
                 } else {
                     unknownScan = true
                 }
+            }
+        }
+        .sheet(isPresented: $showLocationSearch) {
+            LocationSearchSheet(viewModel: viewModel) { locationId in
+                performMove(toLocationId: locationId)
             }
         }
         .alert("Location not found", isPresented: $unknownScan) {
@@ -353,14 +359,14 @@ struct ItemDetailSheet: View {
 
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let notes = item.notes, !notes.isEmpty {
+            if let notes = liveItem.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
-                if let location = viewModel.location(for: item) {
+                if let location = viewModel.location(for: liveItem) {
                     Label {
                         Text(viewModel.displayPath(for: location))
                     } icon: {
@@ -372,7 +378,7 @@ struct ItemDetailSheet: View {
                     .background(.ultraThinMaterial, in: Capsule())
                 }
 
-                if let category = viewModel.category(for: item) {
+                if let category = viewModel.category(for: liveItem) {
                     Text(category.name)
                         .font(.subheadline)
                         .padding(.horizontal, 10)
@@ -387,47 +393,63 @@ struct ItemDetailSheet: View {
     // MARK: - Move Section
 
     private var moveSection: some View {
-        Menu {
-            Button {
-                performMove(toLocationId: nil)
-            } label: {
-                Label("Unassigned", systemImage: "questionmark.circle")
-            }
-
-            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+        VStack(spacing: 12) {
+            Menu {
                 Button {
-                    performMove(toLocationId: entry.location.id)
+                    showLocationSearch = true
                 } label: {
-                    Label {
-                        Text(String(repeating: "   ", count: entry.depth) + entry.location.name)
-                    } icon: {
-                        Text(entry.location.emoji ?? "📍")
+                    Label("Search Locations…", systemImage: "magnifyingglass")
+                }
+
+                Divider()
+
+                Button {
+                    performMove(toLocationId: nil)
+                } label: {
+                    Label("Unassigned", systemImage: "questionmark.circle")
+                }
+
+                Divider()
+
+                ForEach(moveRootLocations, id: \.id) { root in
+                    LocationMoveMenuItem(location: root, viewModel: viewModel) { locationId in
+                        performMove(toLocationId: locationId)
                     }
                 }
+            } label: {
+                moveRow(icon: "arrow.right.circle", text: "Move to Location", trailingIcon: "chevron.up.chevron.down")
             }
 
             if QRScannerView.isSupported {
-                Divider()
                 Button {
                     showMoveScanner = true
                 } label: {
-                    Label("Scan Location QR", systemImage: "qrcode.viewfinder")
+                    moveRow(icon: "qrcode.viewfinder", text: "Scan Location QR", trailingIcon: nil)
                 }
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.right.circle")
-                Text("Move to Location")
-                    .fontWeight(.medium)
-                Spacer()
-                Image(systemName: "chevron.up.chevron.down")
+        }
+    }
+
+    private var moveRootLocations: [Location] {
+        viewModel.rootLocations
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func moveRow(icon: String, text: String, trailingIcon: String?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+            Text(text)
+                .fontWeight(.medium)
+            Spacer()
+            if let trailingIcon {
+                Image(systemName: trailingIcon)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// Move the live item, prompting first if it's shared with members the target location lacks.
@@ -446,6 +468,126 @@ struct ItemDetailSheet: View {
             Task { await viewModel.moveItem(live, toLocationId: locationId) }
         } else {
             pendingMove = (locationId, location, missing)
+        }
+    }
+}
+
+// MARK: - Location Move Menu
+
+/// One entry in the move menu. Locations with children render as a submenu:
+/// the parent itself is selectable at the top, its sublocations nest below.
+struct LocationMoveMenuItem: View {
+    let location: Location
+    let viewModel: StuffViewModel
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        let children = viewModel.childLocations(for: location)
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if children.isEmpty {
+            Button {
+                onSelect(location.id)
+            } label: {
+                Label {
+                    Text(location.name)
+                } icon: {
+                    Text(location.emoji ?? "📍")
+                }
+            }
+        } else {
+            Menu {
+                Button {
+                    onSelect(location.id)
+                } label: {
+                    Label("Move to \"\(location.name)\"", systemImage: "arrow.right.circle")
+                }
+
+                Divider()
+
+                ForEach(children, id: \.id) { child in
+                    LocationMoveMenuItem(location: child, viewModel: viewModel, onSelect: onSelect)
+                }
+            } label: {
+                Label {
+                    Text(location.name)
+                } icon: {
+                    Text(location.emoji ?? "📍")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Location Search Sheet
+
+/// Searchable location picker. Browsing shows the indented tree;
+/// typing filters to matches with their full path for context.
+struct LocationSearchSheet: View {
+    let viewModel: StuffViewModel
+    let onSelect: (String?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var results: [(location: Location, depth: Int)] {
+        let tree = viewModel.flattenedLocationTree()
+        guard !searchText.isEmpty else { return tree }
+        return tree.filter { $0.location.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if searchText.isEmpty {
+                    Button {
+                        onSelect(nil)
+                        dismiss()
+                    } label: {
+                        Label("Unassigned", systemImage: "questionmark.circle")
+                    }
+                    .tint(.primary)
+                }
+
+                ForEach(results, id: \.location.id) { entry in
+                    Button {
+                        onSelect(entry.location.id)
+                        dismiss()
+                    } label: {
+                        Label {
+                            if searchText.isEmpty {
+                                Text(entry.location.name)
+                            } else {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.location.name)
+                                    Text(viewModel.displayPath(for: entry.location))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Text(entry.location.emoji ?? "📍")
+                        }
+                    }
+                    .tint(.primary)
+                    .padding(.leading, searchText.isEmpty ? CGFloat(entry.depth) * 20 : 0)
+                }
+            }
+            .overlay {
+                if !searchText.isEmpty && results.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                }
+            }
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Search locations"
+            )
+            .navigationTitle("Move to Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 }
