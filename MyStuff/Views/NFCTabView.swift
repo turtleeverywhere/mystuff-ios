@@ -83,9 +83,14 @@ struct NFCTabView: View {
                 LocationDetailView(location: loc, viewModel: viewModel)
             }
             .sheet(isPresented: $showQRScanner) {
-                QRScannerSheet { locationId in
-                    if let loc = viewModel.locations.first(where: { $0.id == locationId }) {
-                        path.append(loc)
+                QRScannerSheet { target in
+                    switch target {
+                    case .location(let id):
+                        if let loc = viewModel.locations.first(where: { $0.id == id }) {
+                            path.append(loc)
+                        }
+                    case .item(let id):
+                        updateItem = viewModel.items.first(where: { $0.id == id })
                     }
                 }
             }

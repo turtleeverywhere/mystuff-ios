@@ -58,11 +58,15 @@ struct QRScannerView: UIViewControllerRepresentable {
 }
 
 /// Sheet wrapper: presents the scanner, parses the code via `AppLink`,
-/// and calls `onLocation(id)` for a location code. Non-location / non-app
-/// codes surface an inline message and keep scanning. Handles camera
-/// authorization explicitly (prompts when undetermined, offers Settings when denied).
+/// and calls `onTarget` for any code the `accepts` filter admits. Codes of
+/// the wrong kind, or non-app codes, surface an inline message and keep
+/// scanning. Handles camera authorization explicitly (prompts when
+/// undetermined, offers Settings when denied).
 struct QRScannerSheet: View {
-    let onLocation: (String) -> Void
+    /// Which code kinds this scanner will resolve. Contexts like "move this
+    /// item somewhere" only make sense for locations.
+    var accepts: AppLink.TargetKind = .any
+    let onTarget: (AppLink.Target) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var errorText: String?
     @State private var authStatus = AVCaptureDevice.authorizationStatus(for: .video)
@@ -134,12 +138,12 @@ struct QRScannerSheet: View {
             errorText = "Not a MyStuff code"
             return
         }
-        guard case .location(let id) = target else {
-            errorText = "That’s not a location code"
+        guard accepts.accepts(target) else {
+            errorText = accepts.rejectionMessage
             return
         }
         HapticManager.success()
-        onLocation(id)
+        onTarget(target)
         dismiss()
     }
 }

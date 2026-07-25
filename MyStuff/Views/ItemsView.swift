@@ -650,7 +650,8 @@ struct ItemFormSheet: View {
                 )
             }
             .sheet(isPresented: $showLocationScanner) {
-                QRScannerSheet { locationId in
+                QRScannerSheet(accepts: .location) { target in
+                    let locationId = target.entityId
                     if viewModel.locations.contains(where: { $0.id == locationId }) {
                         selectedLocationId = locationId
                     } else {

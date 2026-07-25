@@ -96,7 +96,8 @@ struct ItemDetailSheet: View {
             .ignoresSafeArea()
         }
         .sheet(isPresented: $showMoveScanner) {
-            QRScannerSheet { locationId in
+            QRScannerSheet(accepts: .location) { target in
+                let locationId = target.entityId
                 if viewModel.locations.contains(where: { $0.id == locationId }) {
                     performMove(toLocationId: locationId)
                 } else {

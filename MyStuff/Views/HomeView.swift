@@ -741,7 +741,8 @@ struct MoveItemSheet: View {
                 }
             }
             .sheet(isPresented: $showingScanner) {
-                QRScannerSheet { locationId in
+                QRScannerSheet(accepts: .location) { target in
+                    let locationId = target.entityId
                     if viewModel.locations.contains(where: { $0.id == locationId }) {
                         selectMove(toLocationId: locationId)
                     } else {

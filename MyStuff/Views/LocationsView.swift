@@ -7,6 +7,7 @@ struct LocationsView: View {
     @State private var expandedIds: Set<String> = []
     @State private var path: [Location] = []
     @State private var showingScanner = false
+    @State private var scannedItem: Item?
     @State private var addingSublocationParent: Location?
     @State private var movingLocation: Location?
 
@@ -50,11 +51,19 @@ struct LocationsView: View {
                 )
             }
             .sheet(isPresented: $showingScanner) {
-                QRScannerSheet { locationId in
-                    if let loc = viewModel.locations.first(where: { $0.id == locationId }) {
-                        path.append(loc)
+                QRScannerSheet { target in
+                    switch target {
+                    case .location(let id):
+                        if let loc = viewModel.locations.first(where: { $0.id == id }) {
+                            path.append(loc)
+                        }
+                    case .item(let id):
+                        scannedItem = viewModel.items.first(where: { $0.id == id })
                     }
                 }
+            }
+            .sheet(item: $scannedItem) { item in
+                NFCUpdateSheet(item: item, viewModel: viewModel)
             }
             .sheet(item: $addingSublocationParent) { parent in
                 LocationFormSheet(
