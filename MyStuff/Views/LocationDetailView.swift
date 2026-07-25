@@ -147,10 +147,9 @@ struct LocationDetailView: View {
             }
         }
         .sheet(isPresented: $showingQR) {
-            QRCodeSheet(
-                subject: QRSubject(target: .location(live.id), name: live.name, icon: live.emoji ?? "📍"),
-                viewModel: viewModel
-            )
+            if let subject = viewModel.qrSubject(for: .location(live.id)) {
+                QRCodeSheet(subject: subject, viewModel: viewModel)
+            }
         }
         .sheet(isPresented: $showCodes) {
             CodesSheet(target: .location(live.id), viewModel: viewModel)

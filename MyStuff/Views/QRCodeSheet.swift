@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Sheet that shows a location's QR sticker with Share (PNG/PDF) and Print actions.
+/// Sheet that shows an entity's QR sticker with Share (PNG/PDF) and Print actions.
 struct QRCodeSheet: View {
     let subject: QRSubject
     let viewModel: StuffViewModel

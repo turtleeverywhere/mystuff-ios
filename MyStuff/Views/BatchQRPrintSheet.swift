@@ -104,8 +104,8 @@ enum QRSheetPDF {
     }
 }
 
-/// Lets the user pick multiple locations and print their QR codes packed
-/// efficiently onto A4 pages to save paper.
+/// Lets the user pick multiple items and locations and print their QR codes
+/// packed efficiently onto A4 pages to save paper.
 struct BatchQRPrintSheet: View {
     let viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
@@ -120,8 +120,21 @@ struct BatchQRPrintSheet: View {
         _selectedIds = State(initialValue: initialSelection)
     }
 
-    private var entries: [(location: Location, depth: Int)] {
+    /// Locations in tree order, paired with their indent depth.
+    private var locationEntries: [(location: Location, depth: Int)] {
         viewModel.flattenedLocationTree()
+    }
+
+    private var itemEntries: [Item] {
+        viewModel.items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var allTargets: [AppLink.Target] {
+        locationEntries.map { .location($0.location.id) } + itemEntries.map { .item($0.id) }
+    }
+
+    private var allSelected: Bool {
+        !allTargets.isEmpty && selectedIds.count == allTargets.count
     }
 
     private var hasCaption: Bool { showIcon || showName }
@@ -130,10 +143,6 @@ struct BatchQRPrintSheet: View {
 
     private var pageCount: Int {
         selectedIds.isEmpty ? 0 : Int(ceil(Double(selectedIds.count) / Double(perPage)))
-    }
-
-    private var allSelected: Bool {
-        !entries.isEmpty && selectedIds.count == entries.count
     }
 
     var body: some View {
@@ -154,22 +163,13 @@ struct BatchQRPrintSheet: View {
                 }
 
                 Section {
-                    ForEach(entries, id: \.location.id) { entry in
-                        Button {
-                            toggle(.location(entry.location.id))
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: selectedIds.contains(.location(entry.location.id)) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedIds.contains(.location(entry.location.id)) ? Color.appAccent : .secondary)
-                                Text(entry.location.emoji ?? "📍")
-                                Text(entry.location.name)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                            }
-                            .padding(.leading, CGFloat(entry.depth) * 16)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(locationEntries, id: \.location.id) { entry in
+                        selectRow(
+                            target: .location(entry.location.id),
+                            icon: entry.location.emoji ?? "📍",
+                            name: entry.location.name,
+                            indent: CGFloat(entry.depth) * 16
+                        )
                     }
                 } header: {
                     HStack {
@@ -178,6 +178,12 @@ struct BatchQRPrintSheet: View {
                         Button(allSelected ? "Clear" : "Select All") { toggleAll() }
                             .font(.caption)
                             .textCase(nil)
+                    }
+                }
+
+                Section("Items") {
+                    ForEach(itemEntries) { item in
+                        selectRow(target: .item(item.id), icon: "📦", name: item.name, indent: 0)
                     }
                 }
             }
@@ -204,8 +210,27 @@ struct BatchQRPrintSheet: View {
     }
 
     private var summary: String {
-        guard !selectedIds.isEmpty else { return "Select locations to print." }
+        guard !selectedIds.isEmpty else { return "Select items or locations to print." }
         return "\(selectedIds.count) selected · \(perPage) per A4 page · \(pageCount) page\(pageCount == 1 ? "" : "s")"
+    }
+
+    @ViewBuilder
+    private func selectRow(target: AppLink.Target, icon: String, name: String, indent: CGFloat) -> some View {
+        Button {
+            toggle(target)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: selectedIds.contains(target) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selectedIds.contains(target) ? Color.appAccent : .secondary)
+                Text(icon)
+                Text(name)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.leading, indent)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggle(_ target: AppLink.Target) {
@@ -213,17 +238,21 @@ struct BatchQRPrintSheet: View {
     }
 
     private func toggleAll() {
-        selectedIds = allSelected ? [] : Set(entries.map { .location($0.location.id) })
+        selectedIds = allSelected ? [] : Set(allTargets)
     }
 
-    /// Renders the selected locations' QR tiles and packs them into an A4 PDF.
+    /// Renders every selected target's tile and packs them into an A4 PDF.
+    /// Order follows `allTargets` so locations lead and items follow.
     @MainActor
     private func makeBatchPDF() -> Data? {
-        let locations = entries.map(\.location).filter { selectedIds.contains(.location($0.id)) }
-        let tiles: [UIImage] = locations.compactMap { loc in
-            let subject = QRSubject(target: .location(loc.id), name: loc.name, icon: loc.emoji ?? "📍")
+        let subjects = allTargets
+            .filter { selectedIds.contains($0) }
+            .compactMap { viewModel.qrSubject(for: $0) }
+        let tiles: [UIImage] = subjects.compactMap { subject in
             guard let qr = QRCodeGenerator.image(for: subject.urlString) else { return nil }
-            let renderer = ImageRenderer(content: QRTileView(subject: subject, qrImage: qr, size: size, showIcon: showIcon, showName: showName))
+            let renderer = ImageRenderer(
+                content: QRTileView(subject: subject, qrImage: qr, size: size, showIcon: showIcon, showName: showName)
+            )
             renderer.scale = 3
             return renderer.uiImage
         }
@@ -236,14 +265,14 @@ struct BatchQRPrintSheet: View {
         guard let data = makeBatchPDF() else { return }
         // Don't dismiss: the AirPrint UI presents over this sheet; dismissing
         // here would tear it down immediately.
-        PDFPrinter.print(data, jobName: "Location QR codes")
+        PDFPrinter.print(data, jobName: "MyStuff QR codes")
     }
 
     @MainActor
     private func shareSheets() {
         guard let data = makeBatchPDF() else { return }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("location-qr-codes.pdf")
+            .appendingPathComponent("mystuff-qr-codes.pdf")
         guard (try? data.write(to: url)) != nil else { return }
         PDFShare.present(url: url)
     }
