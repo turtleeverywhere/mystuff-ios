@@ -16,6 +16,9 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var remoteItemPhotoURL: String?
     var locationChangedAt: Date?
     var nfcTagUID: String?
+    /// Legacy single-tag field above is kept for decode only. All paired tags
+    /// live here; reads go through `pairedTags`, which merges the two.
+    var nfcTags: [NFCTag]?
     /// When true, automatic member-propagation flows (e.g. moveLocation subtree share)
     /// skip this item. Manual sharing is unaffected. Optional so legacy docs missing the
     /// field decode cleanly — same idiom as ownerId/memberIds.
@@ -43,6 +46,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         remoteItemPhotoURL: String? = nil,
         locationChangedAt: Date? = nil,
         nfcTagUID: String? = nil,
+        nfcTags: [NFCTag]? = nil,
         isPrivate: Bool? = nil,
         ownerId: String? = nil,
         memberIds: [String]? = nil,
@@ -61,6 +65,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.remoteItemPhotoURL = remoteItemPhotoURL
         self.locationChangedAt = locationChangedAt
         self.nfcTagUID = nfcTagUID
+        self.nfcTags = nfcTags
         self.isPrivate = isPrivate
         self.ownerId = ownerId
         self.memberIds = memberIds
@@ -73,6 +78,14 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var members: [String] {
         if let memberIds, !memberIds.isEmpty { return memberIds }
         if let ownerId { return [ownerId] }
+        return []
+    }
+
+    /// Non-optional tag list; falls back to the legacy single UID for docs
+    /// written before multi-tag support. Same idiom as `members`.
+    var pairedTags: [NFCTag] {
+        if let nfcTags, !nfcTags.isEmpty { return nfcTags }
+        if let nfcTagUID { return [NFCTag(uid: nfcTagUID)] }
         return []
     }
 }

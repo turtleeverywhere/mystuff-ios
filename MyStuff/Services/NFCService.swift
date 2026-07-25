@@ -122,9 +122,9 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
         }
     }
 
-    private func handleConnected(tag: NFCTag, session: NFCTagReaderSession) {
+    private func handleConnected(tag: CoreNFC.NFCTag, session: NFCTagReaderSession) {
         let serial: String
-        let ndefTag: NFCNDEFTag
+        let ndefTag: CoreNFC.NFCNDEFTag
         switch tag {
         case .miFare(let mf):
             serial = mf.identifier.hexString
@@ -262,7 +262,7 @@ extension CoreNFCService: NFCTagReaderSessionDelegate {
         }
     }
 
-    func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
+    func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [CoreNFC.NFCTag]) {
         guard let first = tags.first else {
             session.invalidate(errorMessage: "No tag detected")
             return

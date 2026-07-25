@@ -5,9 +5,55 @@ import Foundation
 enum AppLink {
     static let host = "mystuff.coding-turtle.org"
 
-    enum Target: Equatable {
+    enum Target: Equatable, Hashable, Identifiable {
         case item(String)
         case location(String)
+
+        /// Stable, kind-qualified identity. Two entities of different kinds
+        /// could in principle share a UUID, so the kind is part of the id.
+        var id: String {
+            switch self {
+            case .item(let id): return "item:\(id)"
+            case .location(let id): return "location:\(id)"
+            }
+        }
+
+        /// The bare entity UUID, without the kind prefix.
+        var entityId: String {
+            switch self {
+            case .item(let id), .location(let id): return id
+            }
+        }
+
+        var kind: TargetKind {
+            switch self {
+            case .item: return .item
+            case .location: return .location
+            }
+        }
+    }
+
+    /// Filter for scanners that only accept one kind of code.
+    /// `Target.kind` never returns `.any`; it exists for the filter side only.
+    enum TargetKind {
+        case any, item, location
+
+        func accepts(_ target: Target) -> Bool {
+            switch self {
+            case .any: return true
+            case .item: return target.kind == .item
+            case .location: return target.kind == .location
+            }
+        }
+
+        /// Inline message shown when a scanned code is the wrong kind.
+        var rejectionMessage: String {
+            switch self {
+            case .any: return "Not a MyStuff code"
+            case .item: return "That's not an item code"
+            case .location: return "That's not a location code"
+            }
+        }
     }
 
     private static let itemPrefix = "/item/"

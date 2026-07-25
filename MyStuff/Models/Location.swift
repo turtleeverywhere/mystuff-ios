@@ -12,6 +12,8 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
     /// Transient marker set on every write in a coalesced share/move batch. Cloud Functions
     /// use it to suppress per-doc push notifications (one summary push covers the batch).
     var shareBatchId: String?
+    /// Paired NFC stickers. Locations have no legacy single-tag field.
+    var nfcTags: [NFCTag]?
     var createdAt: Date
 
     init(
@@ -22,6 +24,7 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
         ownerId: String? = nil,
         memberIds: [String]? = nil,
         shareBatchId: String? = nil,
+        nfcTags: [NFCTag]? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -31,6 +34,7 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
         self.ownerId = ownerId
         self.memberIds = memberIds
         self.shareBatchId = shareBatchId
+        self.nfcTags = nfcTags
         self.createdAt = createdAt
     }
 
@@ -40,4 +44,7 @@ struct Location: Identifiable, Codable, Hashable, Sendable {
         if let ownerId { return [ownerId] }
         return []
     }
+
+    /// Non-optional tag list. No legacy branch — locations never had a single-tag field.
+    var pairedTags: [NFCTag] { nfcTags ?? [] }
 }
