@@ -49,13 +49,13 @@ struct NFCTag: Codable, Hashable, Sendable, Identifiable {
 
 ```swift
 var pairedTags: [NFCTag] {
-    if let nfcTags, !nfcTags.isEmpty { return nfcTags }
+    if let nfcTags { return nfcTags }                      // migrated — wins even when empty
     if let nfcTagUID { return [NFCTag(uid: nfcTagUID)] }   // Item only — legacy
     return []
 }
 ```
 
-`Item.nfcTagUID` is retained so existing documents decode. The first write that touches tags migrates the legacy serial into `nfcTags` and sets `nfcTagUID` to nil. Optionality matches `ownerId` / `memberIds`, so documents written before this change decode cleanly. Firestore stores the array as maps, which its `Codable` mapping handles without extra work.
+`Item.nfcTagUID` is retained so existing documents decode. The first write that touches tags migrates the legacy serial into `nfcTags` and nils the local `nfcTagUID`. The *server* copy of that field survives: writes use `setData(from:merge: true)`, and Swift's synthesized `Codable` emits `encodeIfPresent` for optionals, so a nil produces no key and Firestore leaves the old value untouched. That is why a non-nil `nfcTags` is authoritative even when empty — guarding on `!isEmpty` instead would let the stale legacy serial reappear the moment the user unpaired the last tag. Once migration has been attempted the legacy field is inert. Optionality matches `ownerId` / `memberIds`, so documents written before this change decode cleanly. Firestore stores the array as maps, which its `Codable` mapping handles without extra work.
 
 `Location` has no legacy field, so its accessor omits the singleton branch.
 
@@ -136,8 +136,8 @@ QRScannerSheet(accepts: AppLink.TargetKind = .any, onTarget: (AppLink.Target) ->
 
 `accepts` filters what the scanner will resolve; a rejected kind keeps the existing inline-message-and-keep-scanning behavior. Call sites:
 
-- `HomeView`, `ItemsView`, `LocationsView`, `NFCTabView` — `.any`
-- `ItemDetailSheet` move flow — `.location` (moving an item to an item is meaningless)
+- `LocationsView`, `NFCTabView` — `.any`
+- `ItemDetailSheet` move flow, `HomeView`, `ItemsView` — `.location` (all three are location-pickers; moving an item to an item is meaningless)
 
 ### 9. Scan behavior depends on entity type, not code type
 
@@ -169,7 +169,7 @@ Shown on location rows in `LocationsView` when `pairedTags` is non-empty, alongs
 
 No test target exists in this project. Verification is a clean `xcodebuild` plus manual passes:
 
-1. An item with a legacy `nfcTagUID` shows that tag in `CodesSheet`; pairing a second leaves both listed and clears the legacy field.
+1. An item with a legacy `nfcTagUID` shows that tag in `CodesSheet`; pairing a second leaves both listed. Then unpair every tag from that item and confirm the legacy serial does not reappear once the listener refreshes (the server field persists — see §2 — so `pairedTags` must keep ignoring it).
 2. A location accepts two tags; scanning either opens location detail.
 3. Scanning an item QR opens the quick-update sheet; scanning a location QR opens location detail.
 4. Item-move scanner rejects an item QR with an inline message and keeps scanning.

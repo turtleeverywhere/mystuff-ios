@@ -1617,6 +1617,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `QRSubject`, `qrSubject(for:)` (Task 2); `QRTileView(subject:...)` (Task 4).
 
+> **Amended after review:** the code blocks below put a single global Select All in the Locations header, which would render the whole item inventory from a control labelled "Locations". Spec §7 requires each section to carry its own Select All, scoped to its own targets. As shipped: `locationTargets` / `itemTargets` feed a shared `sectionHeader(_:group:)`, `allSelected(in:)` uses set containment rather than a global count comparison (a stale selected id plus a deleted entity makes counts lie), and `selectedIds` is named `selectedTargets` since it holds `AppLink.Target`s. `allTargets` survives only as the PDF ordering source.
+
 - [ ] **Step 1: Rebuild the selection over subjects**
 
 In `MyStuff/Views/BatchQRPrintSheet.swift`, replace the `entries` / `allSelected` / selection plumbing. Add these computed properties, replacing `entries`:
@@ -1765,7 +1767,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 After Task 10, run the full manual pass from the spec on a physical device (NFC needs real hardware — the simulator can only exercise QR):
 
-1. An item with a legacy `nfcTagUID` shows that tag in `CodesSheet`; pairing a second leaves both listed. Inspect the Firestore document and confirm `nfcTagUID` is now null and `nfcTags` holds both entries.
+1. An item with a legacy `nfcTagUID` shows that tag in `CodesSheet`; pairing a second leaves both listed. Inspect the Firestore document and confirm `nfcTags` holds both entries. `nfcTagUID` will still hold its old value — merge writes omit nil optionals — which is expected and inert, since `pairedTags` ignores it once `nfcTags` is non-nil. Also unpair every tag from such an item and confirm the legacy serial does not reappear after the listener refreshes.
 2. A location accepts two tags; scanning either opens location detail.
 3. Scanning an item QR opens the quick-update sheet; scanning a location QR opens location detail.
 4. The item-move scanner rejects an item QR with "That's not a location code" and keeps scanning.
