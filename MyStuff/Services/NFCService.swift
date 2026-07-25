@@ -1,27 +1,13 @@
 import Foundation
 @preconcurrency import CoreNFC
 
-/// Item universal-link helpers used by the NFC read/write path.
-/// Delegates to `AppLink` so the host and URL shape live in one place.
-enum NFCLink {
-    static func url(forItemId id: String) -> String {
-        AppLink.url(for: .item(id)).absoluteString
-    }
-
-    /// Extract item UUID from any URL we recognize as an NFC payload.
-    static func itemId(from url: URL) -> String? {
-        if case .item(let id)? = AppLink.parse(url) { return id }
-        return nil
-    }
-}
-
 struct NFCScanResult: Sendable {
-    /// Parsed item UUID if the tag's NDEF contains a `https://<host>/item/<uuid>` URI record.
-    /// After a successful write, this is the newly written ID.
-    let itemId: String?
-    /// For write operations: the item UUID that was on the tag before overwriting (if any).
-    /// For pure reads or fresh writes (blank tag), nil.
-    let previousItemId: String?
+    /// Parsed target if the tag's NDEF holds a universal link we recognize.
+    /// After a successful write, this is the newly written target.
+    let target: AppLink.Target?
+    /// For writes: what the tag pointed at before being overwritten, if different.
+    /// nil for pure reads and fresh writes onto a blank tag.
+    let previousTarget: AppLink.Target?
     /// Hex-encoded tag serial (UID).
     let tagSerial: String
 }
@@ -33,8 +19,8 @@ enum NFCError: LocalizedError {
     case readOnlyTag
     case writeFailed(String)
     case unsupportedTag
-    /// Tag carries a different item UUID; surface to UI so user can confirm overwrite.
-    case existingPairing(itemId: String, tagSerial: String)
+    /// Tag carries a different target; surface to UI so the user can confirm overwrite.
+    case existingPairing(target: AppLink.Target, tagSerial: String)
 
     var errorDescription: String? {
         switch self {
@@ -44,7 +30,7 @@ enum NFCError: LocalizedError {
         case .readOnlyTag: return "This tag is read-only and cannot be written."
         case .writeFailed(let msg): return "Write failed: \(msg)"
         case .unsupportedTag: return "Tag type is not supported."
-        case .existingPairing: return "Tag is paired to another item."
+        case .existingPairing: return "Tag is paired to something else."
         }
     }
 }
@@ -52,7 +38,7 @@ enum NFCError: LocalizedError {
 protocol NFCService: AnyObject, Sendable {
     var isAvailable: Bool { get }
     func scan() async throws -> NFCScanResult
-    func writeItem(id: String, allowOverwrite: Bool) async throws -> NFCScanResult
+    func write(target: AppLink.Target, allowOverwrite: Bool) async throws -> NFCScanResult
 }
 
 // MARK: - CoreNFC implementation
@@ -66,7 +52,7 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
 
     private enum Mode {
         case read
-        case write(payload: String, allowOverwrite: Bool)
+        case write(target: AppLink.Target, allowOverwrite: Bool)
     }
 
     private let queue = DispatchQueue(label: "com.flyingturtle.mystuff.nfc")
@@ -78,9 +64,9 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
         try await begin(mode: .read, alert: "Hold your iPhone near the tag")
     }
 
-    func writeItem(id: String, allowOverwrite: Bool) async throws -> NFCScanResult {
+    func write(target: AppLink.Target, allowOverwrite: Bool) async throws -> NFCScanResult {
         try await begin(
-            mode: .write(payload: id, allowOverwrite: allowOverwrite),
+            mode: .write(target: target, allowOverwrite: allowOverwrite),
             alert: "Hold your iPhone near the tag to pair"
         )
     }
@@ -124,7 +110,7 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
 
     private func handleConnected(tag: CoreNFC.NFCTag, session: NFCTagReaderSession) {
         let serial: String
-        let ndefTag: CoreNFC.NFCNDEFTag
+        let ndefTag: NFCNDEFTag
         switch tag {
         case .miFare(let mf):
             serial = mf.identifier.hexString
@@ -163,10 +149,10 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
                     guard let self else { return }
                     nonisolated(unsafe) let unsafeMessage = message
                     self.queue.async {
-                        let existingId = Self.extractItemId(from: unsafeMessage)
+                        let existingTarget = Self.extractTarget(from: unsafeMessage)
                         self.afterRead(
                             serial: serial,
-                            existingId: existingId,
+                            existingTarget: existingTarget,
                             status: status,
                             ndefTag: unsafeTag,
                             session: unsafeSession
@@ -179,7 +165,7 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
 
     private func afterRead(
         serial: String,
-        existingId: String?,
+        existingTarget: AppLink.Target?,
         status: NFCNDEFStatus,
         ndefTag: NFCNDEFTag,
         session: NFCTagReaderSession
@@ -188,12 +174,12 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
         case .read:
             session.alertMessage = "Tag scanned"
             session.invalidate()
-            finish(.success(NFCScanResult(itemId: existingId, previousItemId: nil, tagSerial: serial)))
+            finish(.success(NFCScanResult(target: existingTarget, previousTarget: nil, tagSerial: serial)))
 
-        case .write(let payload, let allowOverwrite):
-            if let existing = existingId, existing != payload, !allowOverwrite {
-                session.invalidate(errorMessage: "Tag paired to another item")
-                finish(.failure(NFCError.existingPairing(itemId: existing, tagSerial: serial)))
+        case .write(let target, let allowOverwrite):
+            if let existing = existingTarget, existing != target, !allowOverwrite {
+                session.invalidate(errorMessage: "Tag paired to something else")
+                finish(.failure(NFCError.existingPairing(target: existing, tagSerial: serial)))
                 return
             }
             guard status == .readWrite else {
@@ -201,14 +187,14 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
                 finish(.failure(NFCError.readOnlyTag))
                 return
             }
-            let uri = NFCLink.url(forItemId: payload)
+            let uri = AppLink.url(for: target).absoluteString
             guard let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(string: uri) else {
                 session.invalidate(errorMessage: "Failed to encode payload")
                 finish(.failure(NFCError.writeFailed("payload encoding")))
                 return
             }
             let message = NFCNDEFMessage(records: [urlPayload])
-            let previousId = (existingId != payload) ? existingId : nil
+            let previousTarget = (existingTarget != target) ? existingTarget : nil
             nonisolated(unsafe) let unsafeSession = session
             ndefTag.writeNDEF(message) { [weak self] error in
                 guard let self else { return }
@@ -219,19 +205,19 @@ final class CoreNFCService: NSObject, NFCService, @unchecked Sendable {
                     } else {
                         unsafeSession.alertMessage = "Tag paired"
                         unsafeSession.invalidate()
-                        self.finish(.success(NFCScanResult(itemId: payload, previousItemId: previousId, tagSerial: serial)))
+                        self.finish(.success(NFCScanResult(target: target, previousTarget: previousTarget, tagSerial: serial)))
                     }
                 }
             }
         }
     }
 
-    private static func extractItemId(from message: NFCNDEFMessage?) -> String? {
+    private static func extractTarget(from message: NFCNDEFMessage?) -> AppLink.Target? {
         guard let records = message?.records else { return nil }
         for record in records {
             if let url = record.wellKnownTypeURIPayload(),
-               let id = NFCLink.itemId(from: url) {
-                return id
+               let target = AppLink.parse(url) {
+                return target
             }
         }
         return nil
@@ -297,21 +283,21 @@ final class MockNFCService: NFCService, @unchecked Sendable {
     var isAvailable: Bool { true }
 
     /// Configure for previews: nil = blank tag, set = paired tag.
-    var stubItemId: String?
+    var stubTarget: AppLink.Target?
     var stubSerial: String = "MOCK01020304"
 
     func scan() async throws -> NFCScanResult {
         try? await Task.sleep(nanoseconds: 300_000_000)
-        return NFCScanResult(itemId: stubItemId, previousItemId: nil, tagSerial: stubSerial)
+        return NFCScanResult(target: stubTarget, previousTarget: nil, tagSerial: stubSerial)
     }
 
-    func writeItem(id: String, allowOverwrite: Bool) async throws -> NFCScanResult {
+    func write(target: AppLink.Target, allowOverwrite: Bool) async throws -> NFCScanResult {
         try? await Task.sleep(nanoseconds: 300_000_000)
-        if let existing = stubItemId, existing != id, !allowOverwrite {
-            throw NFCError.existingPairing(itemId: existing, tagSerial: stubSerial)
+        if let existing = stubTarget, existing != target, !allowOverwrite {
+            throw NFCError.existingPairing(target: existing, tagSerial: stubSerial)
         }
-        let previous = (stubItemId != id) ? stubItemId : nil
-        stubItemId = id
-        return NFCScanResult(itemId: id, previousItemId: previous, tagSerial: stubSerial)
+        let previous = (stubTarget != target) ? stubTarget : nil
+        stubTarget = target
+        return NFCScanResult(target: target, previousTarget: previous, tagSerial: stubSerial)
     }
 }

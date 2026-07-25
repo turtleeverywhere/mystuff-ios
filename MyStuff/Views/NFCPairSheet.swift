@@ -105,18 +105,18 @@ struct NFCPairSheet: View {
         isPairing = true
         Task {
             do {
-                let result = try await nfcService.writeItem(id: item.id, allowOverwrite: allowOverwrite)
-                if let prevId = result.previousItemId {
-                    await viewModel.clearNFCTag(itemId: prevId)
+                let result = try await nfcService.write(target: .item(item.id), allowOverwrite: allowOverwrite)
+                if let previous = result.previousTarget {
+                    await viewModel.removeNFCTag(uid: result.tagSerial, from: previous)
                 }
-                await viewModel.setNFCTag(itemId: item.id, uid: result.tagSerial)
+                await viewModel.addNFCTag(uid: result.tagSerial, to: .item(item.id))
                 isPairing = false
                 dismiss()
             } catch NFCError.userCancelled {
                 isPairing = false
-            } catch NFCError.existingPairing(let previousId, _) {
+            } catch NFCError.existingPairing(let previous, _) {
                 isPairing = false
-                overwriteCandidate = (item, previousId)
+                overwriteCandidate = (item, previous.entityId)
             } catch {
                 isPairing = false
                 errorMessage = error.localizedDescription

@@ -146,12 +146,12 @@ struct NFCTabView: View {
 
     private func handle(result: NFCScanResult) {
         lastScannedSerial = result.tagSerial
-        if let id = result.itemId {
-            if let item = viewModel.items.first(where: { $0.id == id }) {
+        if let target = result.target {
+            if case .item(let id) = target, let item = viewModel.items.first(where: { $0.id == id }) {
                 HapticManager.success()
                 updateItem = item
             } else {
-                lastUnknownItemId = id
+                lastUnknownItemId = target.entityId
                 errorMessage = "This tag is paired to an item that no longer exists. Would you like to pair it to a different item?"
             }
         } else {
