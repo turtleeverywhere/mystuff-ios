@@ -561,25 +561,103 @@ final class StuffViewModel {
         }
     }
 
-    /// Find the item currently paired to a given NFC tag serial.
+    // MARK: - NFC Tags
+
+    /// Paired tags for either entity kind. Returns `[]` for an unknown target.
+    func pairedTags(for target: AppLink.Target) -> [NFCTag] {
+        switch target {
+        case .item(let id): return items.first { $0.id == id }?.pairedTags ?? []
+        case .location(let id): return locations.first { $0.id == id }?.pairedTags ?? []
+        }
+    }
+
+    /// Which entity, if any, currently owns this tag serial. Items are searched first.
+    func target(forTagUID uid: String) -> AppLink.Target? {
+        if let item = items.first(where: { $0.pairedTags.contains { $0.uid == uid } }) {
+            return .item(item.id)
+        }
+        if let location = locations.first(where: { $0.pairedTags.contains { $0.uid == uid } }) {
+            return .location(location.id)
+        }
+        return nil
+    }
+
+    /// Entity name for alerts and sheet titles.
+    func displayName(for target: AppLink.Target) -> String? {
+        switch target {
+        case .item(let id): return items.first { $0.id == id }?.name
+        case .location(let id): return locations.first { $0.id == id }?.name
+        }
+    }
+
+    /// Everything the QR renderer needs. Items have no emoji field (nor does
+    /// Category), so they fall back to a box glyph.
+    func qrSubject(for target: AppLink.Target) -> QRSubject? {
+        switch target {
+        case .item(let id):
+            guard let item = items.first(where: { $0.id == id }) else { return nil }
+            return QRSubject(target: target, name: item.name, icon: "📦")
+        case .location(let id):
+            guard let location = locations.first(where: { $0.id == id }) else { return nil }
+            return QRSubject(target: target, name: location.name, icon: location.emoji ?? "📍")
+        }
+    }
+
+    /// Single write path for tags. Also migrates the legacy `nfcTagUID` by
+    /// clearing it — `pairedTags` already folded it into `tags` before we got here.
+    private func writeTags(_ tags: [NFCTag], to target: AppLink.Target) async {
+        switch target {
+        case .item(let id):
+            guard var item = items.first(where: { $0.id == id }) else { return }
+            item.nfcTags = tags
+            item.nfcTagUID = nil
+            await updateItem(item)
+        case .location(let id):
+            guard var location = locations.first(where: { $0.id == id }) else { return }
+            location.nfcTags = tags
+            await updateLocation(location)
+        }
+    }
+
+    /// Append a tag. De-duplicates by uid, so re-pairing the same sticker is a no-op.
+    func addNFCTag(uid: String, to target: AppLink.Target) async {
+        var tags = pairedTags(for: target)
+        guard !tags.contains(where: { $0.uid == uid }) else { return }
+        tags.append(NFCTag(uid: uid))
+        await writeTags(tags, to: target)
+    }
+
+    /// Unpair one serial, leaving the entity's other tags intact.
+    func removeNFCTag(uid: String, from target: AppLink.Target) async {
+        var tags = pairedTags(for: target)
+        tags.removeAll { $0.uid == uid }
+        await writeTags(tags, to: target)
+    }
+
+    /// Set or clear a tag's display label. Blank input stores nil, not "".
+    func renameNFCTag(uid: String, label: String?, on target: AppLink.Target) async {
+        var tags = pairedTags(for: target)
+        guard let index = tags.firstIndex(where: { $0.uid == uid }) else { return }
+        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        tags[index].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        await writeTags(tags, to: target)
+    }
+
+    // MARK: - Legacy item-only shims (removed in Task 5)
+
     func item(forTagUID uid: String) -> Item? {
-        items.first { $0.nfcTagUID == uid }
+        guard case .item(let id)? = target(forTagUID: uid) else { return nil }
+        return items.first { $0.id == id }
     }
 
-    /// Clear NFC tag pairing on a given item. Used when reassigning a tag.
     func clearNFCTag(itemId: String) async {
-        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
-        var updated = items[index]
-        updated.nfcTagUID = nil
-        await updateItem(updated)
+        for tag in pairedTags(for: .item(itemId)) {
+            await removeNFCTag(uid: tag.uid, from: .item(itemId))
+        }
     }
 
-    /// Set a tag UID on an item without bumping locationChangedAt.
     func setNFCTag(itemId: String, uid: String) async {
-        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
-        var updated = items[index]
-        updated.nfcTagUID = uid
-        await updateItem(updated)
+        await addNFCTag(uid: uid, to: .item(itemId))
     }
 
     /// Update both location and (optionally) location photo from an NFC scan.
