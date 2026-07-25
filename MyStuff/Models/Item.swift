@@ -17,7 +17,8 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var locationChangedAt: Date?
     var nfcTagUID: String?
     /// Legacy single-tag field above is kept for decode only. All paired tags
-    /// live here; reads go through `pairedTags`, which merges the two.
+    /// live here; reads go through `pairedTags`, which prefers this list and
+    /// only falls back to the legacy field while this is still nil.
     var nfcTags: [NFCTag]?
     /// When true, automatic member-propagation flows (e.g. moveLocation subtree share)
     /// skip this item. Manual sharing is unaffected. Optional so legacy docs missing the
@@ -81,10 +82,12 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         return []
     }
 
-    /// Non-optional tag list; falls back to the legacy single UID for docs
-    /// written before multi-tag support. Same idiom as `members`.
+    /// Non-optional tag list. A non-nil `nfcTags` means this item has been
+    /// migrated, so it wins even when empty — otherwise unpairing the last
+    /// tag would fall back to the legacy field and resurrect it. (The legacy
+    /// field survives in Firestore because `merge: true` writes omit nil.)
     var pairedTags: [NFCTag] {
-        if let nfcTags, !nfcTags.isEmpty { return nfcTags }
+        if let nfcTags { return nfcTags }
         if let nfcTagUID { return [NFCTag(uid: nfcTagUID)] }
         return []
     }

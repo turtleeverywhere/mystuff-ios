@@ -164,7 +164,7 @@ struct NFCTabView: View {
                 updateItem = item
             } else {
                 lastUnknownTarget = target
-                errorMessage = "This tag is paired to an item that no longer exists. Would you like to pair it to something else?"
+                errorMessage = "This code points to an item that no longer exists. Would you like to pair it to something else?"
             }
         case .location(let id):
             if let location = viewModel.locations.first(where: { $0.id == id }) {
@@ -172,7 +172,7 @@ struct NFCTabView: View {
                 path.append(location)
             } else {
                 lastUnknownTarget = target
-                errorMessage = "This tag is paired to a location that no longer exists. Would you like to pair it to something else?"
+                errorMessage = "This code points to a location that no longer exists. Would you like to pair it to something else?"
             }
         }
     }

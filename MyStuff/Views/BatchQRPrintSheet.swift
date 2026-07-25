@@ -110,14 +110,14 @@ struct BatchQRPrintSheet: View {
     let viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedIds: Set<AppLink.Target>
+    @State private var selectedTargets: Set<AppLink.Target>
     @State private var size: QRTileSize = .medium
     @State private var showIcon = true
     @State private var showName = true
 
     init(viewModel: StuffViewModel, initialSelection: Set<AppLink.Target> = []) {
         self.viewModel = viewModel
-        _selectedIds = State(initialValue: initialSelection)
+        _selectedTargets = State(initialValue: initialSelection)
     }
 
     /// Locations in tree order, paired with their indent depth.
@@ -129,20 +129,19 @@ struct BatchQRPrintSheet: View {
         viewModel.items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private var allTargets: [AppLink.Target] {
-        locationEntries.map { .location($0.location.id) } + itemEntries.map { .item($0.id) }
-    }
+    private var locationTargets: [AppLink.Target] { locationEntries.map { .location($0.location.id) } }
 
-    private var allSelected: Bool {
-        !allTargets.isEmpty && selectedIds.count == allTargets.count
-    }
+    private var itemTargets: [AppLink.Target] { itemEntries.map { .item($0.id) } }
+
+    /// Ordering source for the PDF: locations lead, items follow.
+    private var allTargets: [AppLink.Target] { locationTargets + itemTargets }
 
     private var hasCaption: Bool { showIcon || showName }
 
     private var perPage: Int { QRSheetPDF.gridInfo(cell: size.cell(hasCaption: hasCaption)).perPage }
 
     private var pageCount: Int {
-        selectedIds.isEmpty ? 0 : Int(ceil(Double(selectedIds.count) / Double(perPage)))
+        selectedTargets.isEmpty ? 0 : Int(ceil(Double(selectedTargets.count) / Double(perPage)))
     }
 
     var body: some View {
@@ -172,19 +171,15 @@ struct BatchQRPrintSheet: View {
                         )
                     }
                 } header: {
-                    HStack {
-                        Text("Locations")
-                        Spacer()
-                        Button(allSelected ? "Clear" : "Select All") { toggleAll() }
-                            .font(.caption)
-                            .textCase(nil)
-                    }
+                    sectionHeader("Locations", group: locationTargets)
                 }
 
-                Section("Items") {
+                Section {
                     ForEach(itemEntries) { item in
                         selectRow(target: .item(item.id), icon: "📦", name: item.name, indent: 0)
                     }
+                } header: {
+                    sectionHeader("Items", group: itemTargets)
                 }
             }
             .navigationTitle("Print Multiple")
@@ -199,10 +194,10 @@ struct BatchQRPrintSheet: View {
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
-                    .disabled(selectedIds.isEmpty)
+                    .disabled(selectedTargets.isEmpty)
 
                     Button("Print") { printSheets() }
-                        .disabled(selectedIds.isEmpty)
+                        .disabled(selectedTargets.isEmpty)
                 }
             }
         }
@@ -210,8 +205,21 @@ struct BatchQRPrintSheet: View {
     }
 
     private var summary: String {
-        guard !selectedIds.isEmpty else { return "Select items or locations to print." }
-        return "\(selectedIds.count) selected · \(perPage) per A4 page · \(pageCount) page\(pageCount == 1 ? "" : "s")"
+        guard !selectedTargets.isEmpty else { return "Select items or locations to print." }
+        return "\(selectedTargets.count) selected · \(perPage) per A4 page · \(pageCount) page\(pageCount == 1 ? "" : "s")"
+    }
+
+    /// Section title plus a Select All scoped to that section's own targets —
+    /// so a tap under "Locations" can never render the whole item inventory.
+    private func sectionHeader(_ title: String, group: [AppLink.Target]) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button(allSelected(in: group) ? "Clear" : "Select All") { toggleAll(in: group) }
+                .font(.caption)
+                .textCase(nil)
+                .disabled(group.isEmpty)
+        }
     }
 
     @ViewBuilder
@@ -220,8 +228,8 @@ struct BatchQRPrintSheet: View {
             toggle(target)
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: selectedIds.contains(target) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selectedIds.contains(target) ? Color.appAccent : .secondary)
+                Image(systemName: selectedTargets.contains(target) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selectedTargets.contains(target) ? Color.appAccent : .secondary)
                 Text(icon)
                 Text(name)
                     .foregroundStyle(.primary)
@@ -234,11 +242,21 @@ struct BatchQRPrintSheet: View {
     }
 
     private func toggle(_ target: AppLink.Target) {
-        if selectedIds.contains(target) { selectedIds.remove(target) } else { selectedIds.insert(target) }
+        if selectedTargets.contains(target) { selectedTargets.remove(target) } else { selectedTargets.insert(target) }
     }
 
-    private func toggleAll() {
-        selectedIds = allSelected ? [] : Set(allTargets)
+    /// True when every target in `group` is selected. Set containment, not a
+    /// count — a stale selected id plus a deleted entity would make counts lie.
+    private func allSelected(in group: [AppLink.Target]) -> Bool {
+        !group.isEmpty && group.allSatisfy(selectedTargets.contains)
+    }
+
+    private func toggleAll(in group: [AppLink.Target]) {
+        if allSelected(in: group) {
+            selectedTargets.subtract(group)
+        } else {
+            selectedTargets.formUnion(group)
+        }
     }
 
     /// Renders every selected target's tile and packs them into an A4 PDF.
@@ -246,7 +264,7 @@ struct BatchQRPrintSheet: View {
     @MainActor
     private func makeBatchPDF() -> Data? {
         let subjects = allTargets
-            .filter { selectedIds.contains($0) }
+            .filter { selectedTargets.contains($0) }
             .compactMap { viewModel.qrSubject(for: $0) }
         let tiles: [UIImage] = subjects.compactMap { subject in
             guard let qr = QRCodeGenerator.image(for: subject.urlString) else { return nil }

@@ -10,7 +10,7 @@ struct CodesRow: View {
         let count = viewModel.pairedTags(for: target).count
         HStack(spacing: 8) {
             Image(systemName: "qrcode")
-                .foregroundStyle(.tint)
+                .foregroundStyle(Color.appAccent)
             Text("Codes")
                 .fontWeight(.medium)
             Spacer()
@@ -206,16 +206,20 @@ struct CodesSheet: View {
         Task {
             do {
                 let result = try await nfcService.write(target: target, allowOverwrite: allowOverwrite)
-                if let previous = result.previousTarget {
+                // Strip the serial from whatever entity our records say owns it —
+                // not from whatever the sticker's (possibly stale) NDEF pointed at.
+                if let previous = viewModel.target(forTagUID: result.tagSerial), previous != target {
                     await viewModel.removeNFCTag(uid: result.tagSerial, from: previous)
                 }
                 await viewModel.addNFCTag(uid: result.tagSerial, to: target)
                 isPairing = false
             } catch NFCError.userCancelled {
                 isPairing = false
-            } catch NFCError.existingPairing(let previous, _) {
+            } catch NFCError.existingPairing(let previous, let serial) {
                 isPairing = false
-                overwritePrevious = previous
+                // Name the entity our records know about; the sticker's NDEF
+                // may still point at an owner that unpaired it.
+                overwritePrevious = viewModel.target(forTagUID: serial) ?? previous
             } catch {
                 isPairing = false
                 errorMessage = error.localizedDescription

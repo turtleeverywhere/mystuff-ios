@@ -10,6 +10,9 @@ struct LocationsView: View {
     @State private var scannedItem: Item?
     @State private var addingSublocationParent: Location?
     @State private var movingLocation: Location?
+    /// Scanned code resolved to an id we no longer hold — surface it instead of
+    /// dismissing the scanner with nothing happening.
+    @State private var unknownScan = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -56,9 +59,15 @@ struct LocationsView: View {
                     case .location(let id):
                         if let loc = viewModel.locations.first(where: { $0.id == id }) {
                             path.append(loc)
+                        } else {
+                            unknownScan = true
                         }
                     case .item(let id):
-                        scannedItem = viewModel.items.first(where: { $0.id == id })
+                        if let item = viewModel.items.first(where: { $0.id == id }) {
+                            scannedItem = item
+                        } else {
+                            unknownScan = true
+                        }
                     }
                 }
             }
@@ -84,6 +93,11 @@ struct LocationsView: View {
                         if let newParentId { expandedIds.insert(newParentId) }
                     }
                 )
+            }
+            .alert("Not found", isPresented: $unknownScan) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("That code points to something that no longer exists.")
             }
             .alert("Delete Location?", isPresented: Binding(
                 get: { locationToDelete != nil },

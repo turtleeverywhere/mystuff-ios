@@ -603,8 +603,12 @@ final class StuffViewModel {
         }
     }
 
-    /// Single write path for tags. Also migrates the legacy `nfcTagUID` by
-    /// clearing it — `pairedTags` already folded it into `tags` before we got here.
+    /// Single write path for tags. `pairedTags` already folded any legacy
+    /// `nfcTagUID` into `tags` before we got here, so we nil the local copy of
+    /// that field. The server copy survives — `merge: true` writes encode
+    /// optionals with `encodeIfPresent`, so a nil emits no key and Firestore
+    /// leaves the old value in place. That's harmless: once `nfcTags` is
+    /// non-nil, `pairedTags` ignores the legacy field entirely.
     private func writeTags(_ tags: [NFCTag], to target: AppLink.Target) async {
         switch target {
         case .item(let id):
@@ -627,9 +631,12 @@ final class StuffViewModel {
         await writeTags(tags, to: target)
     }
 
-    /// Unpair one serial, leaving the entity's other tags intact.
+    /// Unpair one serial, leaving the entity's other tags intact. No-ops when
+    /// the entity doesn't hold that serial, so a stale caller can't trigger a
+    /// pointless write, `updatedAt` bump, and success haptic.
     func removeNFCTag(uid: String, from target: AppLink.Target) async {
         var tags = pairedTags(for: target)
+        guard tags.contains(where: { $0.uid == uid }) else { return }
         tags.removeAll { $0.uid == uid }
         await writeTags(tags, to: target)
     }
