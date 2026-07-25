@@ -63,7 +63,7 @@ struct LocationsView: View {
                 }
             }
             .sheet(item: $scannedItem) { item in
-                NFCUpdateSheet(item: item, viewModel: viewModel)
+                ItemQuickUpdateSheet(item: item, viewModel: viewModel)
             }
             .sheet(item: $addingSublocationParent) { parent in
                 LocationFormSheet(

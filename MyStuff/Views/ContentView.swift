@@ -58,7 +58,7 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
         }
         .sheet(item: $deepLinkedItem) { item in
-            NFCUpdateSheet(item: item, viewModel: viewModel)
+            ItemQuickUpdateSheet(item: item, viewModel: viewModel)
         }
         .sheet(item: $deepLinkedLocation) { location in
             NavigationStack {

@@ -11,7 +11,7 @@ struct NFCTabView: View {
     @State private var updateItem: Item?
     @State private var showPairSheet = false
     @State private var lastScannedSerial: String?
-    @State private var lastUnknownItemId: String?
+    @State private var lastUnknownTarget: AppLink.Target?
 
     @State private var showQRScanner = false
     @State private var path: [Location] = []
@@ -84,18 +84,11 @@ struct NFCTabView: View {
             }
             .sheet(isPresented: $showQRScanner) {
                 QRScannerSheet { target in
-                    switch target {
-                    case .location(let id):
-                        if let loc = viewModel.locations.first(where: { $0.id == id }) {
-                            path.append(loc)
-                        }
-                    case .item(let id):
-                        updateItem = viewModel.items.first(where: { $0.id == id })
-                    }
+                    handle(target: target)
                 }
             }
             .sheet(item: $updateItem) { item in
-                NFCUpdateSheet(item: item, viewModel: viewModel)
+                ItemQuickUpdateSheet(item: item, viewModel: viewModel)
             }
             .sheet(isPresented: $showPairSheet) {
                 NFCPairSheet(viewModel: viewModel, nfcService: nfcService)
@@ -104,16 +97,16 @@ struct NFCTabView: View {
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                if lastUnknownItemId != nil {
+                if lastUnknownTarget != nil {
                     Button("Pair Tag") {
                         errorMessage = nil
-                        lastUnknownItemId = nil
+                        lastUnknownTarget = nil
                         showPairSheet = true
                     }
                 }
                 Button("OK", role: .cancel) {
                     errorMessage = nil
-                    lastUnknownItemId = nil
+                    lastUnknownTarget = nil
                 }
             } message: {
                 Text(errorMessage ?? "")
@@ -130,7 +123,7 @@ struct NFCTabView: View {
     private var subhead: String {
         if isScanning { return "Move your iPhone close to the NFC sticker." }
         if !nfcService.isAvailable { return "" }
-        return "Press Scan Tag, then tap your phone onto a paired NFC sticker to update its location and photo."
+        return "Scan a tag or QR code. Item codes open a quick update; location codes open that location."
     }
 
     private func startScan() {
@@ -151,18 +144,36 @@ struct NFCTabView: View {
 
     private func handle(result: NFCScanResult) {
         lastScannedSerial = result.tagSerial
-        if let target = result.target {
-            if case .item(let id) = target, let item = viewModel.items.first(where: { $0.id == id }) {
-                HapticManager.success()
-                updateItem = item
-            } else {
-                lastUnknownItemId = target.entityId
-                errorMessage = "This tag is paired to an item that no longer exists. Would you like to pair it to a different item?"
-            }
-        } else {
+        guard let target = result.target else {
             // Blank/unknown tag → open pair flow
             HapticManager.impact()
             showPairSheet = true
+            return
+        }
+        handle(target: target)
+    }
+
+    /// One dispatch point for both code kinds. What happens depends on the
+    /// entity, not on whether it was scanned by NFC or camera: items open the
+    /// quick re-shelve sheet, locations open their detail screen.
+    private func handle(target: AppLink.Target) {
+        switch target {
+        case .item(let id):
+            if let item = viewModel.items.first(where: { $0.id == id }) {
+                HapticManager.success()
+                updateItem = item
+            } else {
+                lastUnknownTarget = target
+                errorMessage = "This tag is paired to an item that no longer exists. Would you like to pair it to something else?"
+            }
+        case .location(let id):
+            if let location = viewModel.locations.first(where: { $0.id == id }) {
+                HapticManager.success()
+                path.append(location)
+            } else {
+                lastUnknownTarget = target
+                errorMessage = "This tag is paired to a location that no longer exists. Would you like to pair it to something else?"
+            }
         }
     }
 }

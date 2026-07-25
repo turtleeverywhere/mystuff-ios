@@ -1,9 +1,10 @@
 import PhotosUI
 import SwiftUI
 
-/// Bottom sheet shown after scanning a paired NFC tag.
-/// Lets the user update the item's location photo and current location.
-struct NFCUpdateSheet: View {
+/// Fast re-shelving sheet, reached by scanning an item's NFC tag or QR code,
+/// or by opening its universal link. Lets the user update the item's location
+/// photo and current location without the full detail screen.
+struct ItemQuickUpdateSheet: View {
     let item: Item
     @Bindable var viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
