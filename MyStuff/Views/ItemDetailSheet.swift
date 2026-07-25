@@ -11,11 +11,7 @@ struct ItemDetailSheet: View {
     @State private var showPhotoSource = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
-    @State private var nfcService: NFCService = CoreNFCService()
-    @State private var isPairing = false
-    @State private var nfcErrorMessage: String?
-    @State private var pairOverwritePrevious: String?
-    @State private var showUnpairConfirmation = false
+    @State private var showCodes = false
     @State private var showShareSheet = false
     @State private var showMoveScanner = false
     @State private var showLocationSearch = false
@@ -33,7 +29,15 @@ struct ItemDetailSheet: View {
                     photoSection
                     infoSection
                     moveSection
-                    nfcSection
+                    Button {
+                        showCodes = true
+                    } label: {
+                        CodesRow(target: .item(item.id), viewModel: viewModel)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .tint(.primary)
                     privacySection
                 }
                 .padding()
@@ -54,31 +58,6 @@ struct ItemDetailSheet: View {
                     }
                 }
             }
-            .alert("NFC Error", isPresented: Binding(
-                get: { nfcErrorMessage != nil },
-                set: { if !$0 { nfcErrorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { nfcErrorMessage = nil }
-            } message: {
-                Text(nfcErrorMessage ?? "")
-            }
-            .alert("Tag Already Paired", isPresented: Binding(
-                get: { pairOverwritePrevious != nil },
-                set: { if !$0 { pairOverwritePrevious = nil } }
-            )) {
-                Button("Reassign", role: .destructive) {
-                    pairOverwritePrevious = nil
-                    pairTag(allowOverwrite: true)
-                }
-                Button("Cancel", role: .cancel) { pairOverwritePrevious = nil }
-            } message: {
-                if let prevId = pairOverwritePrevious,
-                   let prevItem = viewModel.items.first(where: { $0.id == prevId }) {
-                    Text("This tag is already paired to \"\(prevItem.name)\". Reassign to \"\(item.name)\"?")
-                } else {
-                    Text("This tag is already paired to another item. Reassign?")
-                }
-            }
         }
         .onChange(of: selectedPhoto) {
             guard let selectedPhoto else { return }
@@ -96,16 +75,8 @@ struct ItemDetailSheet: View {
                 Task { await viewModel.deletePhoto(for: item) }
             }
         }
-        .confirmationDialog(
-            "Unpair NFC tag from \"\(item.name)\"?",
-            isPresented: $showUnpairConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Unpair Tag", role: .destructive) {
-                Task { await viewModel.clearNFCTag(itemId: item.id) }
-            }
-        } message: {
-            Text("The tag will no longer be linked to this item. You can re-pair it anytime.")
+        .sheet(isPresented: $showCodes) {
+            CodesSheet(target: .item(item.id), viewModel: viewModel)
         }
         .sheet(isPresented: $showPhotoSource) {
             PhotoSourceSheet(
@@ -252,77 +223,6 @@ struct ItemDetailSheet: View {
         .frame(maxWidth: .infinity)
         .frame(height: 200)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - NFC Section
-
-    @ViewBuilder
-    private var nfcSection: some View {
-        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        if nfcService.isAvailable {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "wave.3.right")
-                        .foregroundStyle(.tint)
-                    Text("NFC Tag")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    if liveItem.nfcTagUID != nil {
-                        Text("Paired")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(.green.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.green)
-                    }
-                    Spacer()
-                }
-
-                if liveItem.nfcTagUID != nil {
-                    Button(role: .destructive) {
-                        showUnpairConfirmation = true
-                    } label: {
-                        Label("Unpair Tag", systemImage: "wave.3.right.slash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPairing)
-                } else {
-                    Button {
-                        pairTag(allowOverwrite: false)
-                    } label: {
-                        Label(isPairing ? "Hold near tag..." : "Pair NFC Tag", systemImage: "wave.3.right")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPairing)
-                }
-            }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    private func pairTag(allowOverwrite: Bool) {
-        isPairing = true
-        Task {
-            do {
-                let result = try await nfcService.write(target: .item(item.id), allowOverwrite: allowOverwrite)
-                if let previous = result.previousTarget {
-                    await viewModel.removeNFCTag(uid: result.tagSerial, from: previous)
-                }
-                await viewModel.setNFCTag(itemId: item.id, uid: result.tagSerial)
-                isPairing = false
-            } catch NFCError.userCancelled {
-                isPairing = false
-            } catch NFCError.existingPairing(let previous, _) {
-                isPairing = false
-                pairOverwritePrevious = previous.entityId
-            } catch {
-                isPairing = false
-                nfcErrorMessage = error.localizedDescription
-            }
-        }
     }
 
     // MARK: - Privacy Section

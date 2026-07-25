@@ -9,6 +9,7 @@ struct LocationDetailView: View {
 
     @State private var showingEdit = false
     @State private var showingQR = false
+    @State private var showCodes = false
     @State private var detailItem: Item?
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
@@ -69,6 +70,15 @@ struct LocationDetailView: View {
                         }
                     }
                 }
+            }
+
+            Section {
+                Button {
+                    showCodes = true
+                } label: {
+                    CodesRow(target: .location(live.id), viewModel: viewModel)
+                }
+                .tint(.primary)
             }
 
             // Add actions live in their own section, separated from the item list.
@@ -141,6 +151,9 @@ struct LocationDetailView: View {
                 subject: QRSubject(target: .location(live.id), name: live.name, icon: live.emoji ?? "📍"),
                 viewModel: viewModel
             )
+        }
+        .sheet(isPresented: $showCodes) {
+            CodesSheet(target: .location(live.id), viewModel: viewModel)
         }
         .sheet(isPresented: $showingEdit) {
             LocationFormSheet(

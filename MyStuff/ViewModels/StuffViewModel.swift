@@ -643,23 +643,6 @@ final class StuffViewModel {
         await writeTags(tags, to: target)
     }
 
-    // MARK: - Legacy item-only shims (removed in Task 5)
-
-    func item(forTagUID uid: String) -> Item? {
-        guard case .item(let id)? = target(forTagUID: uid) else { return nil }
-        return items.first { $0.id == id }
-    }
-
-    func clearNFCTag(itemId: String) async {
-        for tag in pairedTags(for: .item(itemId)) {
-            await removeNFCTag(uid: tag.uid, from: .item(itemId))
-        }
-    }
-
-    func setNFCTag(itemId: String, uid: String) async {
-        await addNFCTag(uid: uid, to: .item(itemId))
-    }
-
     /// Update both location and (optionally) location photo from an NFC scan.
     func applyNFCUpdate(itemId: String, locationId: String?, photoData: Data?) async {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
