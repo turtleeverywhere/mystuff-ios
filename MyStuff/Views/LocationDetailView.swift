@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 /// A location's home: its items and sub-locations, with Edit and QR actions.
@@ -12,6 +13,16 @@ struct LocationDetailView: View {
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
     @State private var showingAddItem = false
+    @State private var photoSourceItem: Item?
+    @State private var showPhotoSource = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @AppStorage("locationViewMode") private var viewMode = "list"
+    @AppStorage("galleryColumns") private var galleryColumns = 2
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isGallery: Bool { viewMode == "gallery" }
 
     /// Follow live edits so the header/list update after Edit.
     private var live: Location {
@@ -60,7 +71,8 @@ struct LocationDetailView: View {
                 }
             }
 
-            Section("Items") {
+            // Add actions live in their own section, separated from the item list.
+            Section {
                 Button {
                     showingAddItem = true
                 } label: {
@@ -72,9 +84,25 @@ struct LocationDetailView: View {
                 } label: {
                     Label("Move items here", systemImage: "tray.and.arrow.down")
                 }
+            }
 
+            Section("Items") {
                 if directItems.isEmpty {
                     Text("No items here yet.").foregroundStyle(.secondary)
+                } else if isGallery {
+                    ItemGalleryGrid(
+                        items: directItems,
+                        kind: .location,
+                        columns: horizontalSizeClass == .regular ? galleryColumns : 2,
+                        onTap: { detailItem = $0 },
+                        onAddPhoto: { item in
+                            photoSourceItem = item
+                            showPhotoSource = true
+                        },
+                        tileMenu: { item in itemMenuItems(item) }
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
                 } else {
                     ForEach(directItems) { item in
                         Button {
@@ -82,6 +110,7 @@ struct LocationDetailView: View {
                         } label: {
                             Text(item.name).foregroundStyle(.primary)
                         }
+                        .contextMenu { itemMenuItems(item) }
                     }
                 }
             }
@@ -94,6 +123,14 @@ struct LocationDetailView: View {
                     Button { showShareSheet = true } label: {
                         Image(systemName: viewModel.isShared(live) ? "person.2.fill" : "person.2")
                     }
+                }
+                if isGallery && horizontalSizeClass == .regular {
+                    GalleryColumnSlider()
+                }
+                Button {
+                    withAnimation { viewMode = isGallery ? "list" : "gallery" }
+                } label: {
+                    Image(systemName: isGallery ? "list.bullet" : "square.grid.2x2")
                 }
                 Button { showingQR = true } label: { Image(systemName: "qrcode") }
                 Button("Edit") { showingEdit = true }
@@ -147,6 +184,53 @@ struct LocationDetailView: View {
         .sheet(isPresented: $showShareSheet) {
             LocationShareSheet(location: live, viewModel: viewModel)
         }
+        .sheet(isPresented: $showPhotoSource) {
+            PhotoSourceSheet(
+                onCamera: { showCamera = true },
+                onLibrary: { showPhotoPicker = true }
+            )
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { data in
+                guard let item = photoSourceItem else { return }
+                Task {
+                    await viewModel.setPhoto(for: item, imageData: data)
+                    photoSourceItem = nil
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: selectedPhoto) {
+            guard let selectedPhoto, let item = photoSourceItem else { return }
+            Task {
+                if let data = try? await selectedPhoto.loadTransferable(type: Data.self) {
+                    await viewModel.setPhoto(for: item, imageData: data)
+                }
+                self.selectedPhoto = nil
+                photoSourceItem = nil
+            }
+        }
         .containerBackground(LinearGradient.appBackground, for: .navigation)
+    }
+
+    @ViewBuilder
+    private func itemMenuItems(_ item: Item) -> some View {
+        Button {
+            detailItem = item
+        } label: {
+            Label("Details", systemImage: "info.circle")
+        }
+        Button {
+            photoSourceItem = item
+            showPhotoSource = true
+        } label: {
+            Label("Change Photo", systemImage: "camera")
+        }
+        Button(role: .destructive) {
+            Task { await viewModel.deleteItem(item) }
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 }
