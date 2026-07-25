@@ -7,6 +7,11 @@ struct NFCScanResult: Sendable {
     let target: AppLink.Target?
     /// For writes: what the tag pointed at before being overwritten, if different.
     /// nil for pure reads and fresh writes onto a blank tag.
+    ///
+    /// Diagnostic only — deliberately **not** consumed when re-pairing. This is
+    /// what the sticker claims, which goes stale the moment a tag is unpaired
+    /// in-app (unpairing leaves the NDEF payload intact by design). To find the
+    /// entity that actually owns a serial, ask `StuffViewModel.target(forTagUID:)`.
     let previousTarget: AppLink.Target?
     /// Hex-encoded tag serial (UID).
     let tagSerial: String

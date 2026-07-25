@@ -164,11 +164,23 @@ and the assignment, immediately after `self.nfcTagUID = nfcTagUID`:
 
 Then add this computed property next to the existing `members` accessor:
 
+> **Amended after review.** The original version of this step guarded the legacy
+> fallback on `!nfcTags.isEmpty`, which shipped a critical bug: writes use
+> `setData(from:merge: true)` and Swift's synthesized `Codable` emits
+> `encodeIfPresent`, so nil-ing `nfcTagUID` omits the key entirely and Firestore
+> keeps the old serial. Unpairing the last tag then emptied the array, fell
+> through to the surviving legacy field, and the live listener resurrected the
+> tag — leaving legacy items permanently unpairable. A non-nil `nfcTags` must
+> win **even when empty**; that is sound because `writeTags` is its only writer
+> and always writes the complete list.
+
 ```swift
-    /// Non-optional tag list; falls back to the legacy single UID for docs
-    /// written before multi-tag support. Same idiom as `members`.
+    /// Non-optional tag list. A non-nil `nfcTags` means this item has been
+    /// migrated, so it wins even when empty — otherwise unpairing the last
+    /// tag would fall back to the legacy field and resurrect it. (The legacy
+    /// field survives in Firestore because `merge: true` writes omit nil.)
     var pairedTags: [NFCTag] {
-        if let nfcTags, !nfcTags.isEmpty { return nfcTags }
+        if let nfcTags { return nfcTags }
         if let nfcTagUID { return [NFCTag(uid: nfcTagUID)] }
         return []
     }
@@ -277,8 +289,11 @@ In `MyStuff/ViewModels/StuffViewModel.swift`, replace lines 564–583 — the bl
         }
     }
 
-    /// Single write path for tags. Also migrates the legacy `nfcTagUID` by
-    /// clearing it — `pairedTags` already folded it into `tags` before we got here.
+    /// Single write path for tags. `pairedTags` already folded any legacy
+    /// `nfcTagUID` into `tags` before we got here, so nil-ing it locally just
+    /// drops the duplicate. The *server* copy survives — `merge: true` writes
+    /// omit nil optionals — but it is inert, because a non-nil `nfcTags` wins
+    /// in `pairedTags` from here on.
     private func writeTags(_ tags: [NFCTag], to target: AppLink.Target) async {
         switch target {
         case .item(let id):
