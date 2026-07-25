@@ -3,7 +3,7 @@ import UIKit
 
 /// Sheet that shows a location's QR sticker with Share (PNG/PDF) and Print actions.
 struct QRCodeSheet: View {
-    let location: Location
+    let subject: QRSubject
     let viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -42,7 +42,7 @@ struct QRCodeSheet: View {
     @ViewBuilder
     private func content(qrImage: UIImage) -> some View {
         VStack(spacing: 24) {
-            QRTileView(location: location, qrImage: qrImage, size: size, showIcon: showIcon, showName: showName)
+            QRTileView(subject: subject, qrImage: qrImage, size: size, showIcon: showIcon, showName: showName)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(radius: 6)
 
@@ -61,13 +61,13 @@ struct QRCodeSheet: View {
             HStack(spacing: 16) {
                 if let pdfURL {
                     ShareLink(item: pdfURL,
-                              preview: SharePreview("\(location.name) QR", image: Image(uiImage: qrImage))) {
+                              preview: SharePreview("\(subject.name) QR", image: Image(uiImage: qrImage))) {
                         Label("Share PDF", systemImage: "doc")
                     }
                 }
                 if let pngURL {
                     ShareLink(item: pngURL,
-                              preview: SharePreview("\(location.name) QR", image: Image(uiImage: qrImage))) {
+                              preview: SharePreview("\(subject.name) QR", image: Image(uiImage: qrImage))) {
                         Label("Share PNG", systemImage: "photo")
                     }
                 }
@@ -100,7 +100,7 @@ struct QRCodeSheet: View {
         }
         .padding()
         .sheet(isPresented: $showBatch) {
-            BatchQRPrintSheet(viewModel: viewModel, initialSelection: [location.id])
+            BatchQRPrintSheet(viewModel: viewModel, initialSelection: [subject.target])
         }
     }
 
@@ -111,11 +111,11 @@ struct QRCodeSheet: View {
     /// the tile on an A4 page at its actual size so print isn't scaled to fill.
     @MainActor
     private func render() {
-        let urlString = AppLink.url(for: .location(location.id)).absoluteString
+        let urlString = subject.urlString
         guard let qr = qrImage ?? QRCodeGenerator.image(for: urlString) else { return }
         qrImage = qr
 
-        let tile = QRTileView(location: location, qrImage: qr, size: size, showIcon: showIcon, showName: showName)
+        let tile = QRTileView(subject: subject, qrImage: qr, size: size, showIcon: showIcon, showName: showName)
         let renderer = ImageRenderer(content: tile)
         renderer.scale = 3
         guard let image = renderer.uiImage else { return }
@@ -128,15 +128,16 @@ struct QRCodeSheet: View {
     }
 
     private func writeTemp(_ data: Data, ext: String) -> URL? {
-        let safe = location.name
+        let safe = subject.name
             .components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
-        let name = safe.isEmpty ? "location" : safe
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(location.id.prefix(8))-qr.\(ext)")
+        let name = safe.isEmpty ? "code" : safe
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(name)-\(subject.target.entityId.prefix(8))-qr.\(ext)")
         do { try data.write(to: url); return url } catch { return nil }
     }
 
     private func printSticker() {
         guard let pdfURL, let data = try? Data(contentsOf: pdfURL) else { return }
-        PDFPrinter.print(data, jobName: "\(location.name) QR")
+        PDFPrinter.print(data, jobName: "\(subject.name) QR")
     }
 }

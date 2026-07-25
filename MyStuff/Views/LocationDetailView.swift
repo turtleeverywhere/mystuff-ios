@@ -137,7 +137,10 @@ struct LocationDetailView: View {
             }
         }
         .sheet(isPresented: $showingQR) {
-            QRCodeSheet(location: live, viewModel: viewModel)
+            QRCodeSheet(
+                subject: QRSubject(target: .location(live.id), name: live.name, icon: live.emoji ?? "📍"),
+                viewModel: viewModel
+            )
         }
         .sheet(isPresented: $showingEdit) {
             LocationFormSheet(

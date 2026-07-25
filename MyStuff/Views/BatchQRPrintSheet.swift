@@ -29,7 +29,7 @@ enum QRTileSize: String, CaseIterable, Identifiable {
 
 /// A single QR + emoji + name tile, fixed-size for grid packing and export.
 struct QRTileView: View {
-    let location: Location
+    let subject: QRSubject
     let qrImage: UIImage
     let size: QRTileSize
     var showIcon: Bool = true
@@ -48,11 +48,11 @@ struct QRTileView: View {
             if showsCaption {
                 HStack(spacing: 3) {
                     if showIcon {
-                        Text(location.emoji ?? "📍")
+                        Text(subject.icon)
                             .font(.system(size: max(10, size.qrSide * 0.13)))
                     }
                     if showName {
-                        Text(location.name)
+                        Text(subject.name)
                             .font(.system(size: max(8, size.qrSide * 0.11), weight: .semibold))
                             .foregroundStyle(.black)
                             .lineLimit(2)
@@ -110,12 +110,12 @@ struct BatchQRPrintSheet: View {
     let viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedIds: Set<String>
+    @State private var selectedIds: Set<AppLink.Target>
     @State private var size: QRTileSize = .medium
     @State private var showIcon = true
     @State private var showName = true
 
-    init(viewModel: StuffViewModel, initialSelection: Set<String> = []) {
+    init(viewModel: StuffViewModel, initialSelection: Set<AppLink.Target> = []) {
         self.viewModel = viewModel
         _selectedIds = State(initialValue: initialSelection)
     }
@@ -156,11 +156,11 @@ struct BatchQRPrintSheet: View {
                 Section {
                     ForEach(entries, id: \.location.id) { entry in
                         Button {
-                            toggle(entry.location.id)
+                            toggle(.location(entry.location.id))
                         } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: selectedIds.contains(entry.location.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedIds.contains(entry.location.id) ? Color.appAccent : .secondary)
+                                Image(systemName: selectedIds.contains(.location(entry.location.id)) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selectedIds.contains(.location(entry.location.id)) ? Color.appAccent : .secondary)
                                 Text(entry.location.emoji ?? "📍")
                                 Text(entry.location.name)
                                     .foregroundStyle(.primary)
@@ -208,22 +208,22 @@ struct BatchQRPrintSheet: View {
         return "\(selectedIds.count) selected · \(perPage) per A4 page · \(pageCount) page\(pageCount == 1 ? "" : "s")"
     }
 
-    private func toggle(_ id: String) {
-        if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
+    private func toggle(_ target: AppLink.Target) {
+        if selectedIds.contains(target) { selectedIds.remove(target) } else { selectedIds.insert(target) }
     }
 
     private func toggleAll() {
-        selectedIds = allSelected ? [] : Set(entries.map(\.location.id))
+        selectedIds = allSelected ? [] : Set(entries.map { .location($0.location.id) })
     }
 
     /// Renders the selected locations' QR tiles and packs them into an A4 PDF.
     @MainActor
     private func makeBatchPDF() -> Data? {
-        let locations = entries.map(\.location).filter { selectedIds.contains($0.id) }
+        let locations = entries.map(\.location).filter { selectedIds.contains(.location($0.id)) }
         let tiles: [UIImage] = locations.compactMap { loc in
-            let urlString = AppLink.url(for: .location(loc.id)).absoluteString
-            guard let qr = QRCodeGenerator.image(for: urlString) else { return nil }
-            let renderer = ImageRenderer(content: QRTileView(location: loc, qrImage: qr, size: size, showIcon: showIcon, showName: showName))
+            let subject = QRSubject(target: .location(loc.id), name: loc.name, icon: loc.emoji ?? "📍")
+            guard let qr = QRCodeGenerator.image(for: subject.urlString) else { return nil }
+            let renderer = ImageRenderer(content: QRTileView(subject: subject, qrImage: qr, size: size, showIcon: showIcon, showName: showName))
             renderer.scale = 3
             return renderer.uiImage
         }
