@@ -63,21 +63,27 @@ struct ItemsView: View {
             .sheet(isPresented: $showingAddSheet) {
                 ItemFormSheet(
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, shareWith in
+                    onSave: { result in
                         Task {
-                            await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
-                            if let newItem = viewModel.items.last(where: { $0.name == name }) {
-                                if let itemPhotoData {
-                                    await viewModel.setItemPhoto(for: newItem, imageData: itemPhotoData)
-                                }
-                                if let locationPhotoData {
-                                    let refreshed = viewModel.items.first(where: { $0.id == newItem.id }) ?? newItem
-                                    await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
-                                }
-                                for uid in shareWith {
-                                    await viewModel.shareItem(newItem, withFriend: uid)
-                                }
+                            await viewModel.addItem(
+                                id: result.id,
+                                name: result.name,
+                                notes: result.notes,
+                                locationId: result.locationId,
+                                categoryId: result.categoryId
+                            )
+                            guard let newItem = viewModel.items.first(where: { $0.id == result.id }) else { return }
+                            if let data = result.itemPhotoData {
+                                await viewModel.setItemPhoto(for: newItem, imageData: data)
                             }
+                            if let data = result.locationPhotoData {
+                                let refreshed = viewModel.items.first(where: { $0.id == result.id }) ?? newItem
+                                await viewModel.setPhoto(for: refreshed, imageData: data)
+                            }
+                            for uid in result.shareWith {
+                                await viewModel.shareItem(newItem, withFriend: uid)
+                            }
+                            await viewModel.applyStagedTags(result.nfcTags, to: .item(result.id))
                         }
                     }
                 )
@@ -86,21 +92,22 @@ struct ItemsView: View {
                 ItemFormSheet(
                     item: item,
                     viewModel: viewModel,
-                    onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, _ in
+                    onSave: { result in
                         var updated = item
-                        updated.name = name
-                        updated.notes = notes
-                        updated.locationId = locationId
-                        updated.categoryId = categoryId
+                        updated.name = result.name
+                        updated.notes = result.notes
+                        updated.locationId = result.locationId
+                        updated.categoryId = result.categoryId
                         Task {
                             await viewModel.updateItem(updated)
-                            if let itemPhotoData {
-                                await viewModel.setItemPhoto(for: updated, imageData: itemPhotoData)
+                            if let data = result.itemPhotoData {
+                                await viewModel.setItemPhoto(for: updated, imageData: data)
                             }
-                            if let locationPhotoData {
+                            if let data = result.locationPhotoData {
                                 let refreshed = viewModel.items.first(where: { $0.id == updated.id }) ?? updated
-                                await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
+                                await viewModel.setPhoto(for: refreshed, imageData: data)
                             }
+                            await viewModel.applyStagedTags(result.nfcTags, to: .item(item.id))
                         }
                     }
                 )
@@ -386,10 +393,24 @@ struct ItemPhotoPreviewSheet: View {
 
 // MARK: - Item Form Sheet
 
+/// Everything `ItemFormSheet` hands back on Save. Bundled rather than passed as
+/// positional closure arguments — the list had already reached seven.
+struct ItemFormResult {
+    let id: String
+    let name: String
+    let notes: String?
+    let locationId: String?
+    let categoryId: String?
+    let itemPhotoData: Data?
+    let locationPhotoData: Data?
+    let shareWith: Set<String>
+    let nfcTags: [NFCTag]
+}
+
 struct ItemFormSheet: View {
     let item: Item?
     @Bindable var viewModel: StuffViewModel
-    let onSave: (String, String?, String?, String?, Data?, Data?, Set<String>) -> Void
+    let onSave: (ItemFormResult) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -409,6 +430,15 @@ struct ItemFormSheet: View {
     @State private var shareWith: Set<String>
     @State private var showLocationScanner = false
     @State private var unknownLocationScan = false
+    /// Pre-allocated so codes can be paired and printed against a draft that
+    /// has not been saved yet. MUST be `@State`: SwiftUI recreates the view
+    /// struct on every render, so a plain `let` would mint a fresh UUID each
+    /// pass and a paired tag would point at an id that never reaches Firestore.
+    @State private var draftId: String
+    /// Tag edits are buffered here and applied on Save, matching how the rest
+    /// of this form treats Cancel.
+    @State private var stagedTags: [NFCTag]
+    @State private var showCodes = false
 
     private enum PhotoTarget { case item, location }
 
@@ -425,7 +455,7 @@ struct ItemFormSheet: View {
         item: Item? = nil,
         initialLocationId: String? = nil,
         viewModel: StuffViewModel,
-        onSave: @escaping (String, String?, String?, String?, Data?, Data?, Set<String>) -> Void
+        onSave: @escaping (ItemFormResult) -> Void
     ) {
         self.item = item
         self.viewModel = viewModel
@@ -436,6 +466,8 @@ struct ItemFormSheet: View {
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
         _useSameForLocation = State(initialValue: item == nil)
         _shareWith = State(initialValue: [])
+        _draftId = State(initialValue: item?.id ?? UUID().uuidString)
+        _stagedTags = State(initialValue: item?.pairedTags ?? [])
     }
 
     var body: some View {
@@ -574,6 +606,8 @@ struct ItemFormSheet: View {
                     }
                 }
 
+                codesSection
+
                 // Edit-only, owner-only. Acts immediately (reuses setItemPrivate,
                 // which resets to private on enable and no-ops for non-owners).
                 if let liveItem, viewModel.canManageSharing(of: liveItem) {
@@ -620,7 +654,17 @@ struct ItemFormSheet: View {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
                         let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
                         let resolvedLocationData: Data? = useSameForLocation ? photoData : locationPhotoData
-                        onSave(name, notes.isEmpty ? nil : notes, locationId, categoryId, photoData, resolvedLocationData, shareWith)
+                        onSave(ItemFormResult(
+                            id: draftId,
+                            name: name,
+                            notes: notes.isEmpty ? nil : notes,
+                            locationId: locationId,
+                            categoryId: categoryId,
+                            itemPhotoData: photoData,
+                            locationPhotoData: resolvedLocationData,
+                            shareWith: shareWith,
+                            nfcTags: stagedTags
+                        ))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -664,6 +708,25 @@ struct ItemFormSheet: View {
             } message: {
                 Text("That QR points to a location that no longer exists.")
             }
+            .sheet(isPresented: $showCodes) {
+                CodesSheet(
+                    subject: QRSubject(target: .item(draftId), name: name, icon: "📦"),
+                    tags: stagedTags,
+                    onPair: { serial in
+                        guard !stagedTags.contains(where: { $0.uid == serial }) else { return }
+                        stagedTags.append(NFCTag(uid: serial))
+                    },
+                    onRemove: { serial in
+                        stagedTags.removeAll { $0.uid == serial }
+                    },
+                    onRename: { serial, label in
+                        guard let index = stagedTags.firstIndex(where: { $0.uid == serial }) else { return }
+                        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        stagedTags[index].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
+                    },
+                    viewModel: viewModel
+                )
+            }
             .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { data in
@@ -687,6 +750,24 @@ struct ItemFormSheet: View {
         switch photoTarget {
         case .item: photoData = data
         case .location: locationPhotoData = data
+        }
+    }
+
+    /// Extracted so the `Form`'s `body` type-checks in reasonable time.
+    private var codesSection: some View {
+        Section {
+            Button {
+                showCodes = true
+            } label: {
+                CodesRow(tags: stagedTags)
+            }
+            .tint(.primary)
+        } header: {
+            Text("Codes")
+        } footer: {
+            if item == nil {
+                Text("Codes activate when you save this item.")
+            }
         }
     }
 }

@@ -179,21 +179,27 @@ struct LocationDetailView: View {
             ItemFormSheet(
                 initialLocationId: live.id,
                 viewModel: viewModel,
-                onSave: { name, notes, locationId, categoryId, itemPhotoData, locationPhotoData, shareWith in
+                onSave: { result in
                     Task {
-                        await viewModel.addItem(name: name, notes: notes, locationId: locationId, categoryId: categoryId)
-                        if let newItem = viewModel.items.last(where: { $0.name == name }) {
-                            if let itemPhotoData {
-                                await viewModel.setItemPhoto(for: newItem, imageData: itemPhotoData)
-                            }
-                            if let locationPhotoData {
-                                let refreshed = viewModel.items.first(where: { $0.id == newItem.id }) ?? newItem
-                                await viewModel.setPhoto(for: refreshed, imageData: locationPhotoData)
-                            }
-                            for uid in shareWith {
-                                await viewModel.shareItem(newItem, withFriend: uid)
-                            }
+                        await viewModel.addItem(
+                            id: result.id,
+                            name: result.name,
+                            notes: result.notes,
+                            locationId: result.locationId,
+                            categoryId: result.categoryId
+                        )
+                        guard let newItem = viewModel.items.first(where: { $0.id == result.id }) else { return }
+                        if let data = result.itemPhotoData {
+                            await viewModel.setItemPhoto(for: newItem, imageData: data)
                         }
+                        if let data = result.locationPhotoData {
+                            let refreshed = viewModel.items.first(where: { $0.id == result.id }) ?? newItem
+                            await viewModel.setPhoto(for: refreshed, imageData: data)
+                        }
+                        for uid in result.shareWith {
+                            await viewModel.shareItem(newItem, withFriend: uid)
+                        }
+                        await viewModel.applyStagedTags(result.nfcTags, to: .item(result.id))
                     }
                 }
             )
