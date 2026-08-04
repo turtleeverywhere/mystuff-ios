@@ -119,6 +119,7 @@ In create mode the section carries a footer: **"Codes activate when you save thi
 - Blanking a physical tag when it is unpaired.
 - Cleaning up orphaned tags written against a cancelled draft; the existing re-pair flow covers it.
 - Firestore security rules — no new fields.
+- Batch printing ("Print Multiple…") for an unsaved draft. `BatchQRPrintSheet` enumerates entities from the view model, so a draft cannot appear there; the button is hidden until the entity is saved. Single-sticker Print, Share PDF and Share PNG do work for a draft.
 
 ## Testing
 
@@ -132,3 +133,5 @@ No test target exists in this project. Verification is a clean `xcodebuild` plus
 6. Create an item with no tag interaction at all. No tag write occurs, and the item saves as before.
 7. Create two items with the same name in a row, attaching a photo to each. Each photo lands on the correct item (the id-lookup fix).
 8. The same passes for `LocationFormSheet`.
+9. In a create form, open Codes → "Show, Share & Print" *before* saving. Print and both Share actions produce the draft's sticker; "Print Multiple…" is not offered.
+10. Force a create to fail mid-save (e.g. offline with rules denying the write). No staged serial is unpaired from its current owner, and a location created from `ItemQuickUpdateSheet` leaves the picker unchanged rather than binding to a dangling `locationId`.
