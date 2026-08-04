@@ -48,8 +48,11 @@ struct LocationsView: View {
             .sheet(isPresented: $showingAddSheet) {
                 LocationFormSheet(
                     viewModel: viewModel,
-                    onSave: { name, emoji, parentId in
-                        Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
+                    onSave: { result in
+                        Task {
+                            await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                            await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
+                        }
                     }
                 )
             }
@@ -78,9 +81,12 @@ struct LocationsView: View {
                 LocationFormSheet(
                     initialParentId: parent.id,
                     viewModel: viewModel,
-                    onSave: { name, emoji, parentId in
-                        Task { await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId) }
-                        if let parentId { expandedIds.insert(parentId) }
+                    onSave: { result in
+                        Task {
+                            await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                            await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
+                        }
+                        if let parentId = result.parentId { expandedIds.insert(parentId) }
                     }
                 )
             }
@@ -260,28 +266,47 @@ struct LocationsView: View {
 
 // MARK: - Location Form Sheet
 
+/// Everything `LocationFormSheet` hands back on Save. Mirrors `ItemFormResult`.
+struct LocationFormResult {
+    let id: String
+    let name: String
+    let emoji: String?
+    let parentId: String?
+    let nfcTags: [NFCTag]
+}
+
 struct LocationFormSheet: View {
     let location: Location?
     let viewModel: StuffViewModel
-    let onSave: (String, String?, String?) -> Void
+    let onSave: (LocationFormResult) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var emoji: String
     @State private var selectedParentId: String
+    /// Pre-allocated so codes can be paired and printed against a draft that
+    /// has not been saved yet. MUST be `@State`: SwiftUI recreates the view
+    /// struct on every render, so a plain `let` would mint a fresh UUID each
+    /// pass and a paired tag would point at an id that never reaches Firestore.
+    @State private var draftId: String
+    /// Tag edits are buffered here and applied on Save.
+    @State private var stagedTags: [NFCTag]
+    @State private var showCodes = false
 
     private static let noParentSentinel = "__none__"
     private let popularEmojis = ["🏠", "🚗", "📦", "🏢", "🛋️", "🖥️", "🚙", "🏠", "🔧", "🏕️", "🎒", "🗄️"]
 
     /// `initialParentId` pre-selects a parent when creating a NEW location
     /// (e.g. "Add Sub-location" from a long-press); ignored when editing.
-    init(location: Location? = nil, initialParentId: String? = nil, viewModel: StuffViewModel, onSave: @escaping (String, String?, String?) -> Void) {
+    init(location: Location? = nil, initialParentId: String? = nil, viewModel: StuffViewModel, onSave: @escaping (LocationFormResult) -> Void) {
         self.location = location
         self.viewModel = viewModel
         self.onSave = onSave
         _name = State(initialValue: location?.name ?? "")
         _emoji = State(initialValue: location?.emoji ?? "")
         _selectedParentId = State(initialValue: location?.parentId ?? initialParentId ?? Self.noParentSentinel)
+        _draftId = State(initialValue: location?.id ?? UUID().uuidString)
+        _stagedTags = State(initialValue: location?.pairedTags ?? [])
     }
 
     var body: some View {
@@ -321,6 +346,21 @@ struct LocationFormSheet: View {
                         }
                     }
                 }
+
+                Section {
+                    Button {
+                        showCodes = true
+                    } label: {
+                        CodesRow(tags: stagedTags)
+                    }
+                    .tint(.primary)
+                } header: {
+                    Text("Codes")
+                } footer: {
+                    if location == nil {
+                        Text("Codes activate when you save this location.")
+                    }
+                }
             }
             .navigationTitle(location == nil ? "New Location" : "Edit Location")
             .navigationBarTitleDisplayMode(.inline)
@@ -331,11 +371,40 @@ struct LocationFormSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let parentId = selectedParentId == Self.noParentSentinel ? nil : selectedParentId
-                        onSave(name, emoji.isEmpty ? nil : emoji, parentId)
+                        onSave(LocationFormResult(
+                            id: draftId,
+                            name: name,
+                            emoji: emoji.isEmpty ? nil : emoji,
+                            parentId: parentId,
+                            nfcTags: stagedTags
+                        ))
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+            }
+            .sheet(isPresented: $showCodes) {
+                CodesSheet(
+                    subject: QRSubject(
+                        target: .location(draftId),
+                        name: name,
+                        icon: emoji.isEmpty ? "📍" : emoji
+                    ),
+                    tags: stagedTags,
+                    onPair: { serial in
+                        guard !stagedTags.contains(where: { $0.uid == serial }) else { return }
+                        stagedTags.append(NFCTag(uid: serial))
+                    },
+                    onRemove: { serial in
+                        stagedTags.removeAll { $0.uid == serial }
+                    },
+                    onRename: { serial, label in
+                        guard let index = stagedTags.firstIndex(where: { $0.uid == serial }) else { return }
+                        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        stagedTags[index].label = (trimmed?.isEmpty ?? true) ? nil : trimmed
+                    },
+                    viewModel: viewModel
+                )
             }
         }
     }

@@ -160,12 +160,15 @@ struct LocationDetailView: View {
             LocationFormSheet(
                 location: live,
                 viewModel: viewModel,
-                onSave: { name, emoji, parentId in
+                onSave: { result in
                     var updated = live
-                    updated.name = name
-                    updated.emoji = emoji
-                    updated.parentId = parentId
-                    Task { await viewModel.updateLocation(updated) }
+                    updated.name = result.name
+                    updated.emoji = result.emoji
+                    updated.parentId = result.parentId
+                    Task {
+                        await viewModel.updateLocation(updated)
+                        await viewModel.applyStagedTags(result.nfcTags, to: .location(live.id))
+                    }
                 }
             )
         }

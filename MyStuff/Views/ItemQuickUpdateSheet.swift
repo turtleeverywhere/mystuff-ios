@@ -78,12 +78,11 @@ struct ItemQuickUpdateSheet: View {
         .sheet(isPresented: $showLocationFormSheet) {
             LocationFormSheet(
                 viewModel: viewModel,
-                onSave: { name, emoji, parentId in
+                onSave: { result in
                     Task {
-                        await viewModel.addLocation(name: name, emoji: emoji, parentId: parentId)
-                        if let newLoc = viewModel.locations.last(where: { $0.name == name && $0.parentId == parentId }) {
-                            selectedLocationId = newLoc.id
-                        }
+                        await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                        await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
+                        selectedLocationId = result.id
                     }
                 }
             )
