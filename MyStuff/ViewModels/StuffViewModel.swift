@@ -396,9 +396,11 @@ final class StuffViewModel {
 
     // MARK: - Item CRUD
 
-    func addItem(name: String, notes: String?, locationId: String?, categoryId: String?) async {
+    /// `id` is defaulted so existing callers are unaffected. The form sheets
+    /// pass a pre-allocated draft id so codes can be paired before the item exists.
+    func addItem(id: String = UUID().uuidString, name: String, notes: String?, locationId: String?, categoryId: String?) async {
         let owner = service.currentUserId
-        let item = Item(name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil, ownerId: owner, memberIds: [owner])
+        let item = Item(id: id, name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil, ownerId: owner, memberIds: [owner])
         do {
             try await service.addItem(item)
             if !items.contains(where: { $0.id == item.id }) {
@@ -650,6 +652,23 @@ final class StuffViewModel {
         await writeTags(tags, to: target)
     }
 
+    /// Apply a buffered tag list to an entity, stripping each serial from any
+    /// other entity that currently owns it. The form sheets stage tag edits
+    /// until Save and then call this; `CodesSheet` in live mode writes through
+    /// `addNFCTag` / `removeNFCTag` instead.
+    ///
+    /// No-ops when the staged list already matches, so an ordinary
+    /// rename-the-item save writes no tags.
+    func applyStagedTags(_ staged: [NFCTag], to entity: AppLink.Target) async {
+        guard staged != pairedTags(for: entity) else { return }
+        for tag in staged {
+            if let previous = target(forTagUID: tag.uid), previous != entity {
+                await removeNFCTag(uid: tag.uid, from: previous)
+            }
+        }
+        await writeTags(staged, to: entity)
+    }
+
     /// Update both location and (optionally) location photo from an NFC scan.
     func applyNFCUpdate(itemId: String, locationId: String?, photoData: Data?) async {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
@@ -798,9 +817,11 @@ final class StuffViewModel {
 
     // MARK: - Location CRUD
 
-    func addLocation(name: String, emoji: String?, parentId: String? = nil) async {
+    /// `id` is defaulted so existing callers are unaffected. The form sheets
+    /// pass a pre-allocated draft id so codes can be paired before the location exists.
+    func addLocation(id: String = UUID().uuidString, name: String, emoji: String?, parentId: String? = nil) async {
         let owner = service.currentUserId
-        let location = Location(name: name, emoji: emoji, parentId: parentId, ownerId: owner, memberIds: [owner])
+        let location = Location(id: id, name: name, emoji: emoji, parentId: parentId, ownerId: owner, memberIds: [owner])
         do {
             try await service.addLocation(location)
             locations.append(location)
