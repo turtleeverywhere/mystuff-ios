@@ -81,6 +81,7 @@ struct ItemQuickUpdateSheet: View {
                 onSave: { result in
                     Task {
                         await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                        guard viewModel.locations.contains(where: { $0.id == result.id }) else { return }
                         await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
                         selectedLocationId = result.id
                     }

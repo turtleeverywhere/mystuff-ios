@@ -51,6 +51,7 @@ struct LocationsView: View {
                     onSave: { result in
                         Task {
                             await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                            guard viewModel.locations.contains(where: { $0.id == result.id }) else { return }
                             await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
                         }
                     }
@@ -84,6 +85,7 @@ struct LocationsView: View {
                     onSave: { result in
                         Task {
                             await viewModel.addLocation(id: result.id, name: result.name, emoji: result.emoji, parentId: result.parentId)
+                            guard viewModel.locations.contains(where: { $0.id == result.id }) else { return }
                             await viewModel.applyStagedTags(result.nfcTags, to: .location(result.id))
                         }
                         if let parentId = result.parentId { expandedIds.insert(parentId) }
@@ -347,20 +349,7 @@ struct LocationFormSheet: View {
                     }
                 }
 
-                Section {
-                    Button {
-                        showCodes = true
-                    } label: {
-                        CodesRow(tags: stagedTags)
-                    }
-                    .tint(.primary)
-                } header: {
-                    Text("Codes")
-                } footer: {
-                    if location == nil {
-                        Text("Codes activate when you save this location.")
-                    }
-                }
+                codesSection
             }
             .navigationTitle(location == nil ? "New Location" : "Edit Location")
             .navigationBarTitleDisplayMode(.inline)
@@ -405,6 +394,24 @@ struct LocationFormSheet: View {
                     },
                     viewModel: viewModel
                 )
+            }
+        }
+    }
+
+    /// Extracted so the `Form`'s `body` type-checks in reasonable time.
+    private var codesSection: some View {
+        Section {
+            Button {
+                showCodes = true
+            } label: {
+                CodesRow(tags: stagedTags)
+            }
+            .tint(.primary)
+        } header: {
+            Text("Codes")
+        } footer: {
+            if location == nil {
+                Text("Codes activate when you save this location.")
             }
         }
     }

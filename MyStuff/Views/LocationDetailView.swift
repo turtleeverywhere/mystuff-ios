@@ -152,9 +152,13 @@ struct LocationDetailView: View {
             }
         }
         .sheet(isPresented: $showCodes) {
-            if let subject = viewModel.qrSubject(for: .location(live.id)) {
-                CodesSheet(live: subject, tags: live.pairedTags, viewModel: viewModel)
-            }
+            // Build the subject locally rather than looking it up: a lookup
+            // returns nil once the location is deleted, presenting a blank sheet.
+            CodesSheet(
+                live: QRSubject(target: .location(live.id), name: live.name, icon: live.emoji ?? "📍"),
+                tags: live.pairedTags,
+                viewModel: viewModel
+            )
         }
         .sheet(isPresented: $showingEdit) {
             LocationFormSheet(

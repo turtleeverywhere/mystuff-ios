@@ -15,6 +15,10 @@ struct QRCodeSheet: View {
     @State private var showName = true
     @State private var showBatch = false
 
+    /// Batch printing lists entities from the view model, so it cannot include
+    /// an unsaved draft. Hide it until the entity exists.
+    private var isSaved: Bool { viewModel.qrSubject(for: subject.target) != nil }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -85,16 +89,18 @@ struct QRCodeSheet: View {
             .disabled(pdfURL == nil)
             .padding(.horizontal)
 
-            Button {
-                showBatch = true
-            } label: {
-                Label("Print Multiple…", systemImage: "square.grid.2x2")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+            if isSaved {
+                Button {
+                    showBatch = true
+                } label: {
+                    Label("Print Multiple…", systemImage: "square.grid.2x2")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.appAccent)
+                .padding(.horizontal)
             }
-            .buttonStyle(.bordered)
-            .tint(Color.appAccent)
-            .padding(.horizontal)
 
             Spacer()
         }

@@ -76,9 +76,13 @@ struct ItemDetailSheet: View {
             }
         }
         .sheet(isPresented: $showCodes) {
-            if let subject = viewModel.qrSubject(for: .item(item.id)) {
-                CodesSheet(live: subject, tags: liveItem.pairedTags, viewModel: viewModel)
-            }
+            // Build the subject locally rather than looking it up: a lookup
+            // returns nil once the item is deleted, presenting a blank sheet.
+            CodesSheet(
+                live: QRSubject(target: .item(liveItem.id), name: liveItem.name, icon: "📦"),
+                tags: liveItem.pairedTags,
+                viewModel: viewModel
+            )
         }
         .sheet(isPresented: $showPhotoSource) {
             PhotoSourceSheet(
