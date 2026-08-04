@@ -32,7 +32,7 @@ struct ItemDetailSheet: View {
                     Button {
                         showCodes = true
                     } label: {
-                        CodesRow(target: .item(item.id), viewModel: viewModel)
+                        CodesRow(tags: liveItem.pairedTags)
                             .padding()
                             .frame(maxWidth: .infinity)
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -76,7 +76,9 @@ struct ItemDetailSheet: View {
             }
         }
         .sheet(isPresented: $showCodes) {
-            CodesSheet(target: .item(item.id), viewModel: viewModel)
+            if let subject = viewModel.qrSubject(for: .item(item.id)) {
+                CodesSheet(live: subject, tags: liveItem.pairedTags, viewModel: viewModel)
+            }
         }
         .sheet(isPresented: $showPhotoSource) {
             PhotoSourceSheet(

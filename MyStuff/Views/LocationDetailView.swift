@@ -76,7 +76,7 @@ struct LocationDetailView: View {
                 Button {
                     showCodes = true
                 } label: {
-                    CodesRow(target: .location(live.id), viewModel: viewModel)
+                    CodesRow(tags: live.pairedTags)
                 }
                 .tint(.primary)
             }
@@ -152,7 +152,9 @@ struct LocationDetailView: View {
             }
         }
         .sheet(isPresented: $showCodes) {
-            CodesSheet(target: .location(live.id), viewModel: viewModel)
+            if let subject = viewModel.qrSubject(for: .location(live.id)) {
+                CodesSheet(live: subject, tags: live.pairedTags, viewModel: viewModel)
+            }
         }
         .sheet(isPresented: $showingEdit) {
             LocationFormSheet(

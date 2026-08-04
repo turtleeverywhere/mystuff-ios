@@ -1,20 +1,20 @@
 import SwiftUI
 
-/// Compact summary row that opens `CodesSheet`. Style-neutral so each detail
-/// screen can wrap it in its own idiom (material card vs. List row).
+/// Compact summary row that opens `CodesSheet`. Style-neutral so each screen
+/// can wrap it in its own idiom (material card vs. List row). Takes the tag
+/// list directly so a form sheet can show its staged count and a detail
+/// screen its live one.
 struct CodesRow: View {
-    let target: AppLink.Target
-    let viewModel: StuffViewModel
+    let tags: [NFCTag]
 
     var body: some View {
-        let count = viewModel.pairedTags(for: target).count
         HStack(spacing: 8) {
             Image(systemName: "qrcode")
                 .foregroundStyle(Color.appAccent)
             Text("Codes")
                 .fontWeight(.medium)
             Spacer()
-            Text(count == 0 ? "QR only" : "QR · \(count) tag\(count == 1 ? "" : "s")")
+            Text(tags.isEmpty ? "QR only" : "QR · \(tags.count) tag\(tags.count == 1 ? "" : "s")")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Image(systemName: "chevron.right")
@@ -28,7 +28,15 @@ struct CodesRow: View {
 /// labelled NFC tags. Identical for items and locations — this is the single
 /// place the "both kinds, many of each" rule is expressed.
 struct CodesSheet: View {
-    let target: AppLink.Target
+    let subject: QRSubject
+    let tags: [NFCTag]
+    /// Called with the scanned tag serial after a successful NDEF write.
+    let onPair: @MainActor (String) async -> Void
+    /// Called with the serial to unpair.
+    let onRemove: @MainActor (String) async -> Void
+    /// Called with the serial and its new label (nil clears it).
+    let onRename: @MainActor (String, String?) async -> Void
+    /// Needed only to name the *other* entity in the reassign alert.
     @Bindable var viewModel: StuffViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -41,7 +49,7 @@ struct CodesSheet: View {
     /// Set when the scanned tag already points elsewhere; drives the reassign alert.
     @State private var overwritePrevious: AppLink.Target?
 
-    private var tags: [NFCTag] { viewModel.pairedTags(for: target) }
+    private var target: AppLink.Target { subject.target }
 
     var body: some View {
         NavigationStack {
@@ -57,9 +65,7 @@ struct CodesSheet: View {
                 }
             }
             .sheet(isPresented: $showQR) {
-                if let subject = viewModel.qrSubject(for: target) {
-                    QRCodeSheet(subject: subject, viewModel: viewModel)
-                }
+                QRCodeSheet(subject: subject, viewModel: viewModel)
             }
             .alert("Rename Tag", isPresented: renamingBinding) {
                 renameAlertActions
@@ -147,7 +153,7 @@ struct CodesSheet: View {
         }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
-                Task { await viewModel.removeNFCTag(uid: tag.uid, from: target) }
+                Task { await onRemove(tag.uid) }
             } label: {
                 Label("Unpair", systemImage: "trash")
             }
@@ -174,7 +180,7 @@ struct CodesSheet: View {
         Button("Save") {
             if let tag = renamingTag {
                 let text = renameText
-                Task { await viewModel.renameNFCTag(uid: tag.uid, label: text, on: target) }
+                Task { await onRename(tag.uid, text) }
             }
             renamingTag = nil
         }
@@ -206,12 +212,7 @@ struct CodesSheet: View {
         Task {
             do {
                 let result = try await nfcService.write(target: target, allowOverwrite: allowOverwrite)
-                // Strip the serial from whatever entity our records say owns it —
-                // not from whatever the sticker's (possibly stale) NDEF pointed at.
-                if let previous = viewModel.target(forTagUID: result.tagSerial), previous != target {
-                    await viewModel.removeNFCTag(uid: result.tagSerial, from: previous)
-                }
-                await viewModel.addNFCTag(uid: result.tagSerial, to: target)
+                await onPair(result.tagSerial)
                 isPairing = false
             } catch NFCError.userCancelled {
                 isPairing = false
@@ -225,5 +226,33 @@ struct CodesSheet: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+extension CodesSheet {
+    /// Live mode: every edit writes straight through to the view model. Used by
+    /// the detail screens, where the entity already exists. The staging form
+    /// sheets use the memberwise initializer with buffer-mutating closures.
+    init(live subject: QRSubject, tags: [NFCTag], viewModel: StuffViewModel) {
+        let target = subject.target
+        self.init(
+            subject: subject,
+            tags: tags,
+            onPair: { serial in
+                // Strip the serial from whatever entity our records say owns it —
+                // not from whatever the sticker's (possibly stale) NDEF pointed at.
+                if let previous = viewModel.target(forTagUID: serial), previous != target {
+                    await viewModel.removeNFCTag(uid: serial, from: previous)
+                }
+                await viewModel.addNFCTag(uid: serial, to: target)
+            },
+            onRemove: { serial in
+                await viewModel.removeNFCTag(uid: serial, from: target)
+            },
+            onRename: { serial, label in
+                await viewModel.renameNFCTag(uid: serial, label: label, on: target)
+            },
+            viewModel: viewModel
+        )
     }
 }
