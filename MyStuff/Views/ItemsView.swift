@@ -121,9 +121,8 @@ struct ItemsView: View {
                     }
                 )
             }
-            .sheet(item: $previewItem) { item in
-                ItemPhotoPreviewSheet(item: item, viewModel: viewModel)
-                    .presentationDetents([.medium, .large])
+            .fullScreenCover(item: $previewItem) { item in
+                PhotoPreviewViewer(item: item, kind: .item, viewModel: viewModel)
             }
             .sheet(isPresented: $showPhotoSource) {
                 PhotoSourceSheet(
@@ -165,46 +164,57 @@ struct ItemsView: View {
     private var itemsList: some View {
         List {
             ForEach(viewModel.filteredItems) { item in
-                HStack(spacing: 12) {
-                    itemPhotoCircle(item)
-                    Button {
-                        editingItem = item
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.name)
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-                                if let notes = item.notes, !notes.isEmpty {
-                                    Text(notes)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            if !item.pairedTags.isEmpty {
-                                NFCBadge(iconOnly: true)
-                            }
-                            categoryBadge(for: item)
-                            locationBadge(for: item)
-                            sharedBadge(for: item)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.vertical, 2)
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        Task { await viewModel.deleteItem(item) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-                .contextMenu {
-                    itemMenuItems(item)
-                }
+                itemRow(item)
             }
+        }
+    }
+
+    private func itemRow(_ item: Item) -> some View {
+        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
+        return itemRowBody(item)
+            .itemTapGestures(
+                previewEnabled: liveItem.hasItemPhoto,
+                onPreview: { previewItem = liveItem },
+                onOpen: { editingItem = item }
+            )
+    }
+
+    private func itemRowBody(_ item: Item) -> some View {
+        HStack(spacing: 12) {
+            itemPhotoCircle(item)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    if let notes = item.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                if !item.pairedTags.isEmpty {
+                    NFCBadge(iconOnly: true)
+                }
+                categoryBadge(for: item)
+                locationBadge(for: item)
+                sharedBadge(for: item)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(.isButton)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                Task { await viewModel.deleteItem(item) }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            itemMenuItems(item)
         }
     }
 
@@ -221,6 +231,7 @@ struct ItemsView: View {
                     photoSourceItem = item
                     showPhotoSource = true
                 },
+                onDoubleTap: { previewItem = $0 },
                 tileMenu: { item in
                     itemMenuItems(item)
                 }
@@ -351,42 +362,6 @@ struct ItemsView: View {
                 showingAddSheet = true
             }
             .buttonStyle(.borderedProminent)
-        }
-    }
-}
-
-// MARK: - Item Photo Preview Sheet
-
-struct ItemPhotoPreviewSheet: View {
-    let item: Item
-    @Bindable var viewModel: StuffViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        NavigationStack {
-            Group {
-                if liveItem.hasItemPhoto {
-                    PhotoView(item: liveItem, kind: .item, size: .full) { image in
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .padding()
-                    } placeholder: {
-                        ProgressView()
-                    }
-                } else {
-                    ContentUnavailableView("No photo", systemImage: "photo")
-                }
-            }
-            .navigationTitle(item.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
         }
     }
 }
