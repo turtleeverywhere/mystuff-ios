@@ -173,6 +173,7 @@ struct PhotoPreviewViewer: View {
                     offset.width += value.translation.width
                     offset.height += value.translation.height
                     gestureOffset = .zero
+                    dismissDrag = 0
                 } else if value.translation.height > dismissThreshold {
                     dismiss()
                 } else {
