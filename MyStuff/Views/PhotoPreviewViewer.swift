@@ -149,13 +149,20 @@ struct PhotoPreviewViewer: View {
             }
             .onEnded { _ in
                 let combined = zoom * gestureZoom
+                let settled = combined <= 1.01 ? 1 : min(combined, maxZoom)
+
+                // Hand the live delta over to the committed value in one
+                // unanimated step. The photo is already drawn at `combined`, so
+                // clearing `gestureZoom` while animating `zoom` would render
+                // their product as 1x for a frame — a zoom-out bounce on release.
                 gestureZoom = 1
+                zoom = combined
+
+                // Only a clamp — pinched past the limits — is worth animating.
+                guard settled != combined else { return }
                 withAnimation(.spring(duration: 0.25)) {
-                    zoom = min(max(combined, 1), maxZoom)
-                    if zoom <= 1.01 {
-                        zoom = 1
-                        offset = .zero
-                    }
+                    zoom = settled
+                    if settled == 1 { offset = .zero }
                 }
             }
     }
