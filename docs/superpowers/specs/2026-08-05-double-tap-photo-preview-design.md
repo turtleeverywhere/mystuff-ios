@@ -77,7 +77,8 @@ Contents and interaction:
 - **Pinch to zoom** 1×–5× via `MagnifyGesture`, snapping back to 1× below threshold.
 - **Double-tap inside the viewer** toggles 1× ↔ 2.5×, animated.
 - **Drag** pans while zoomed. At 1×, a downward drag dismisses: the backdrop fades with distance and snaps back if the drag ends under threshold.
-- Close `xmark` button top-trailing over the backdrop; item name top-leading, `.caption`, secondary.
+- Close `xmark` button top-trailing over the backdrop.
+- Top-leading caption block: the item name, and beneath it a location badge — the location's emoji (defaulting to 📍) and name in an `.ultraThinMaterial` capsule, matching the row badges elsewhere. The badge is omitted entirely when the item has no location; no "Unassigned" placeholder.
 
 ### Replaced
 
