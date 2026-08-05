@@ -160,7 +160,9 @@ The viewer, not yet wired to anything. Building it standalone means a compile fa
 
 **Interfaces:**
 - Consumes: `PhotoKind` and `PhotoView(item:kind:size:onResolve:content:placeholder:)` from Task 1. `viewModel.location(for:)` and `viewModel.items` from `StuffViewModel` (both already exist). `Item.hasItemPhoto` / `Item.hasLocationPhoto` from the extension at the bottom of `PhotoView.swift`.
-- Produces: `PhotoPreviewViewer(item: Item, kind: PhotoKind, viewModel: StuffViewModel)`, presented by Tasks 4–6 via `.fullScreenCover`.
+- Produces:
+  - `PhotoPreviewViewer(item: Item, kind: PhotoKind, viewModel: StuffViewModel)`, presented by Tasks 4–6 via `.fullScreenCover`.
+  - `View.itemTapGestures(previewEnabled:onPreview:onOpen:)`, the single place the "no recognizer without a photo" rule lives. Used by Tasks 3–6.
 
 - [ ] **Step 1: Write the file**
 
@@ -361,6 +363,31 @@ struct PhotoPreviewViewer: View {
         }
     }
 }
+
+// MARK: - Row & Tile Gestures
+
+extension View {
+    /// Single tap opens the row's usual destination; double tap previews the photo.
+    ///
+    /// The double-tap recognizer is attached only when there is a photo to
+    /// preview. That is deliberate: an attached recognizer makes SwiftUI hold
+    /// every single tap back to see whether a second one lands, so rows without
+    /// a photo would pay a delay for a gesture that does nothing.
+    @ViewBuilder
+    func itemTapGestures(
+        previewEnabled: Bool,
+        onPreview: @escaping () -> Void,
+        onOpen: @escaping () -> Void
+    ) -> some View {
+        if previewEnabled {
+            self
+                .onTapGesture(count: 2, perform: onPreview)
+                .onTapGesture(perform: onOpen)
+        } else {
+            self.onTapGesture(perform: onOpen)
+        }
+    }
+}
 ```
 
 - [ ] **Step 2: Build**
@@ -385,7 +412,7 @@ The callback is optional and defaults to `nil` so the three call sites keep comp
 - Modify: `MyStuff/Views/ItemGalleryGrid.swift`
 
 **Interfaces:**
-- Consumes: `PhotoKind` from Task 1.
+- Consumes: `PhotoKind` from Task 1; `View.itemTapGestures(previewEnabled:onPreview:onOpen:)` from Task 2.
 - Produces: `onDoubleTap: ((Item) -> Void)? = nil` on both `ItemGalleryGrid` initializers, positioned after `onAddPhoto`.
 
 - [ ] **Step 1: Add the property and thread it through both initializers**
@@ -440,7 +467,7 @@ And add the matching stored property to `GalleryTile`, after `let onAddPhoto: (I
     let onDoubleTap: ((Item) -> Void)?
 ```
 
-- [ ] **Step 3: Move the tap handling out of `tileBody` and into a conditional `body`**
+- [ ] **Step 3: Move the tap handling out of `tileBody` and onto the shared modifier**
 
 Delete this trailing modifier from the end of `tileBody` (keep the `.contentShape` line immediately above it):
 
@@ -458,28 +485,19 @@ Then replace `GalleryTile.body` with:
 
 ```swift
     var body: some View {
-        if hasPhoto, let onDoubleTap {
-            tileBody
-                .onTapGesture(count: 2) { onDoubleTap(item) }
-                .onTapGesture { onTap(item) }
-        } else {
-            tileBody
-                .onTapGesture {
+        tileBody
+            .itemTapGestures(
+                previewEnabled: hasPhoto && onDoubleTap != nil,
+                onPreview: { onDoubleTap?(item) },
+                onOpen: {
                     if hasPhoto {
                         onTap(item)
                     } else {
                         onAddPhoto(item)
                     }
                 }
-        }
+            )
     }
-```
-
-`body` needs `@ViewBuilder` for the if/else — add the attribute directly above `var body`:
-
-```swift
-    @ViewBuilder
-    var body: some View {
 ```
 
 - [ ] **Step 4: Build**
@@ -504,7 +522,7 @@ Items previews the **item** photo. The inner name `Button` goes away so the whol
 - Modify: `MyStuff/Views/ItemsView.swift:124-127` (sheet → cover), `:165-209` (list rows), `:213-230` (gallery), `:358-392` (delete sheet)
 
 **Interfaces:**
-- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` from Task 2; `onDoubleTap` from Task 3.
+- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` and `View.itemTapGestures(previewEnabled:onPreview:onOpen:)` from Task 2; `onDoubleTap` from Task 3.
 - Produces: nothing consumed by later tasks.
 
 - [ ] **Step 1: Swap the preview sheet for the full-screen cover**
@@ -539,19 +557,14 @@ Replace the whole `itemsList` computed property (lines 165-209) with these three
         }
     }
 
-    /// The double-tap recognizer is attached only when there is a photo to
-    /// preview — without a photo the row keeps its instant single tap.
-    @ViewBuilder
     private func itemRow(_ item: Item) -> some View {
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        if liveItem.hasItemPhoto {
-            itemRowBody(item)
-                .onTapGesture(count: 2) { previewItem = liveItem }
-                .onTapGesture { editingItem = item }
-        } else {
-            itemRowBody(item)
-                .onTapGesture { editingItem = item }
-        }
+        return itemRowBody(item)
+            .itemTapGestures(
+                previewEnabled: liveItem.hasItemPhoto,
+                onPreview: { previewItem = liveItem },
+                onOpen: { editingItem = item }
+            )
     }
 
     private func itemRowBody(_ item: Item) -> some View {
@@ -630,7 +643,7 @@ Home previews the **location** photo. Note the trailing move-arrow stays a `Butt
 - Modify: `MyStuff/Views/HomeView.swift:133-136` (sheet → cover), `:505-518` (gallery), `:544-587` (item row), `:791-853` (delete sheet)
 
 **Interfaces:**
-- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` from Task 2; `onDoubleTap` from Task 3.
+- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` and `View.itemTapGestures(previewEnabled:onPreview:onOpen:)` from Task 2; `onDoubleTap` from Task 3.
 - Produces: nothing consumed by later tasks.
 
 - [ ] **Step 1: Swap the preview sheet for the full-screen cover**
@@ -657,18 +670,13 @@ with:
 Replace the whole `itemRow(_:tag:)` function (lines 544-587) with:
 
 ```swift
-    /// The double-tap recognizer is attached only when there is a photo to
-    /// preview — without a photo the row keeps its instant single tap.
-    @ViewBuilder
     private func itemRow(_ item: Item, tag: some View) -> some View {
-        if item.hasLocationPhoto {
-            itemRowBody(item, tag: tag)
-                .onTapGesture(count: 2) { previewItem = item }
-                .onTapGesture { detailItem = item }
-        } else {
-            itemRowBody(item, tag: tag)
-                .onTapGesture { detailItem = item }
-        }
+        itemRowBody(item, tag: tag)
+            .itemTapGestures(
+                previewEnabled: item.hasLocationPhoto,
+                onPreview: { previewItem = item },
+                onOpen: { detailItem = item }
+            )
     }
 
     private func itemRowBody(_ item: Item, tag: some View) -> some View {
@@ -750,7 +758,7 @@ Location detail previews the **location** photo. Its list rows are plain text wi
 - Modify: `MyStuff/Views/LocationDetailView.swift:13` (state), `:99-125` (items section), plus one new cover modifier
 
 **Interfaces:**
-- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` from Task 2; `onDoubleTap` from Task 3.
+- Consumes: `PhotoPreviewViewer(item:kind:viewModel:)` and `View.itemTapGestures(previewEnabled:onPreview:onOpen:)` from Task 2; `onDoubleTap` from Task 3.
 - Produces: nothing.
 
 - [ ] **Step 1: Add the state**
@@ -782,18 +790,13 @@ Replace the `else` branch's `ForEach` (the one building `Button { detailItem = i
 Then add these two functions next to the view's other private helpers, above `itemMenuItems`:
 
 ```swift
-    /// The double-tap recognizer is attached only when there is a photo to
-    /// preview — without a photo the row keeps its instant single tap.
-    @ViewBuilder
     private func itemRow(_ item: Item) -> some View {
-        if item.hasLocationPhoto {
-            itemRowBody(item)
-                .onTapGesture(count: 2) { previewItem = item }
-                .onTapGesture { detailItem = item }
-        } else {
-            itemRowBody(item)
-                .onTapGesture { detailItem = item }
-        }
+        itemRowBody(item)
+            .itemTapGestures(
+                previewEnabled: item.hasLocationPhoto,
+                onPreview: { previewItem = item },
+                onOpen: { detailItem = item }
+            )
     }
 
     private func itemRowBody(_ item: Item) -> some View {
