@@ -11,6 +11,7 @@ struct LocationDetailView: View {
     @State private var showingQR = false
     @State private var showCodes = false
     @State private var detailItem: Item?
+    @State private var previewItem: Item?
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
     @State private var showingAddItem = false
@@ -109,18 +110,14 @@ struct LocationDetailView: View {
                             photoSourceItem = item
                             showPhotoSource = true
                         },
+                        onDoubleTap: { previewItem = $0 },
                         tileMenu: { item in itemMenuItems(item) }
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.clear)
                 } else {
                     ForEach(directItems) { item in
-                        Button {
-                            detailItem = item
-                        } label: {
-                            Text(item.name).foregroundStyle(.primary)
-                        }
-                        .contextMenu { itemMenuItems(item) }
+                        itemRow(item)
                     }
                 }
             }
@@ -150,6 +147,9 @@ struct LocationDetailView: View {
             if let subject = viewModel.qrSubject(for: .location(live.id)) {
                 QRCodeSheet(subject: subject, viewModel: viewModel)
             }
+        }
+        .fullScreenCover(item: $previewItem) { item in
+            PhotoPreviewViewer(item: item, kind: .location, viewModel: viewModel)
         }
         .sheet(isPresented: $showCodes) {
             // Build the subject locally rather than looking it up: a lookup
@@ -242,6 +242,24 @@ struct LocationDetailView: View {
             }
         }
         .containerBackground(LinearGradient.appBackground, for: .navigation)
+    }
+
+    private func itemRow(_ item: Item) -> some View {
+        itemRowBody(item)
+            .itemTapGestures(
+                previewEnabled: item.hasLocationPhoto,
+                onPreview: { previewItem = item },
+                onOpen: { detailItem = item }
+            )
+    }
+
+    private func itemRowBody(_ item: Item) -> some View {
+        Text(item.name)
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityAddTraits(.isButton)
+            .contextMenu { itemMenuItems(item) }
     }
 
     @ViewBuilder
