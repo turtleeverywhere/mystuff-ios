@@ -7,6 +7,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
     let columns: Int
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
+    let onDoubleTap: ((Item) -> Void)?
     let tileMenu: ((Item) -> TileMenu)?
 
     private var gridColumns: [GridItem] {
@@ -19,6 +20,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
         onAddPhoto: @escaping (Item) -> Void,
+        onDoubleTap: ((Item) -> Void)? = nil,
         @ViewBuilder tileMenu: @escaping (Item) -> TileMenu
     ) {
         self.items = items
@@ -26,6 +28,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
         self.columns = columns
         self.onTap = onTap
         self.onAddPhoto = onAddPhoto
+        self.onDoubleTap = onDoubleTap
         self.tileMenu = tileMenu
     }
 
@@ -43,7 +46,8 @@ struct ItemGalleryGrid<TileMenu: View>: View {
             item: item,
             kind: kind,
             onTap: onTap,
-            onAddPhoto: onAddPhoto
+            onAddPhoto: onAddPhoto,
+            onDoubleTap: onDoubleTap
         )
         if let tileMenu {
             base.contextMenu { tileMenu(item) }
@@ -59,13 +63,15 @@ extension ItemGalleryGrid where TileMenu == EmptyView {
         kind: PhotoKind,
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
-        onAddPhoto: @escaping (Item) -> Void
+        onAddPhoto: @escaping (Item) -> Void,
+        onDoubleTap: ((Item) -> Void)? = nil
     ) {
         self.items = items
         self.kind = kind
         self.columns = columns
         self.onTap = onTap
         self.onAddPhoto = onAddPhoto
+        self.onDoubleTap = onDoubleTap
         self.tileMenu = nil
     }
 }
@@ -77,6 +83,7 @@ private struct GalleryTile: View {
     let kind: PhotoKind
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
+    let onDoubleTap: ((Item) -> Void)?
 
     private var hasPhoto: Bool {
         kind == .item ? item.hasItemPhoto : item.hasLocationPhoto
@@ -84,6 +91,17 @@ private struct GalleryTile: View {
 
     var body: some View {
         tileBody
+            .itemTapGestures(
+                previewEnabled: hasPhoto && onDoubleTap != nil,
+                onPreview: { onDoubleTap?(item) },
+                onOpen: {
+                    if hasPhoto {
+                        onTap(item)
+                    } else {
+                        onAddPhoto(item)
+                    }
+                }
+            )
     }
 
     private var tileBody: some View {
@@ -117,13 +135,6 @@ private struct GalleryTile: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
-            .onTapGesture {
-                if hasPhoto {
-                    onTap(item)
-                } else {
-                    onAddPhoto(item)
-                }
-            }
     }
 
     private var nameOverlay: some View {
