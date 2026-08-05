@@ -55,10 +55,11 @@ struct PhotoPreviewViewer: View {
                     x: offset.width + gestureOffset.width,
                     y: offset.height + gestureOffset.height + dismissDrag
                 )
-                .gesture(magnifyGesture)
-                .simultaneousGesture(dragGesture)
-                .onTapGesture(count: 2) { toggleZoom() }
         }
+        .contentShape(Rectangle())
+        .gesture(magnifyGesture)
+        .simultaneousGesture(dragGesture)
+        .onTapGesture(count: 2) { toggleZoom() }
         .overlay(alignment: .topLeading) { caption }
         .overlay(alignment: .topTrailing) { closeButton }
         .statusBarHidden()
@@ -169,10 +170,10 @@ struct PhotoPreviewViewer: View {
                 }
             }
             .onEnded { value in
+                gestureOffset = .zero
                 if isZoomed {
                     offset.width += value.translation.width
                     offset.height += value.translation.height
-                    gestureOffset = .zero
                     dismissDrag = 0
                 } else if value.translation.height > dismissThreshold {
                     dismiss()

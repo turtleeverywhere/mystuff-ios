@@ -170,11 +170,10 @@ struct ItemsView: View {
     }
 
     private func itemRow(_ item: Item) -> some View {
-        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        return itemRowBody(item)
+        itemRowBody(item)
             .itemTapGestures(
-                previewEnabled: liveItem.hasItemPhoto,
-                onPreview: { previewItem = liveItem },
+                previewEnabled: item.hasItemPhoto,
+                onPreview: { previewItem = item },
                 onOpen: { editingItem = item }
             )
     }

@@ -135,6 +135,7 @@ private struct GalleryTile: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityAddTraits(.isButton)
     }
 
     private var nameOverlay: some View {
