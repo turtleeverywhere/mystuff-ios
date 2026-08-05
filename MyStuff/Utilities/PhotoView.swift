@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// Which of an item's two photos to render: the item itself, or the place it is stored.
+enum PhotoKind {
+    case location, item
+
+    fileprivate var filename: String {
+        switch self {
+        case .location: return "photo"
+        case .item: return "item_photo"
+        }
+    }
+}
+
 /// Local-first photo loader for `Item` photos.
 ///
 /// Resolution order:
@@ -8,17 +20,6 @@ import SwiftUI
 ///   3. Remote URL — downloaded once, persisted to the local primary store
 ///   4. Placeholder
 struct PhotoView<Content: View, Placeholder: View>: View {
-
-    enum Kind {
-        case location, item
-
-        fileprivate var filename: String {
-            switch self {
-            case .location: return "photo"
-            case .item: return "item_photo"
-            }
-        }
-    }
 
     enum TargetSize {
         case thumbnail(CGFloat)
@@ -33,8 +34,11 @@ struct PhotoView<Content: View, Placeholder: View>: View {
     }
 
     let item: Item
-    let kind: Kind
+    let kind: PhotoKind
     let size: TargetSize
+    /// Called once resolution finishes. `false` means every source failed —
+    /// callers use it to tell "still loading" apart from "gave up".
+    var onResolve: ((Bool) -> Void)? = nil
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
 
@@ -49,7 +53,9 @@ struct PhotoView<Content: View, Placeholder: View>: View {
             }
         }
         .task(id: cacheKey) {
-            uiImage = await resolve()
+            let resolved = await resolve()
+            uiImage = resolved
+            onResolve?(resolved != nil)
         }
     }
 

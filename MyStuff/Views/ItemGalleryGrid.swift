@@ -1,14 +1,9 @@
 import SwiftUI
 
-/// Which of an item's two photos a gallery tile shows.
-enum GalleryPhotoKind {
-    case item, location
-}
-
 /// Photo grid with configurable column count, used by the Home and Items gallery modes.
 struct ItemGalleryGrid<TileMenu: View>: View {
     let items: [Item]
-    let kind: GalleryPhotoKind
+    let kind: PhotoKind
     let columns: Int
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
@@ -20,7 +15,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
 
     init(
         items: [Item],
-        kind: GalleryPhotoKind,
+        kind: PhotoKind,
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
         onAddPhoto: @escaping (Item) -> Void,
@@ -61,7 +56,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
 extension ItemGalleryGrid where TileMenu == EmptyView {
     init(
         items: [Item],
-        kind: GalleryPhotoKind,
+        kind: PhotoKind,
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
         onAddPhoto: @escaping (Item) -> Void
@@ -79,7 +74,7 @@ extension ItemGalleryGrid where TileMenu == EmptyView {
 
 private struct GalleryTile: View {
     let item: Item
-    let kind: GalleryPhotoKind
+    let kind: PhotoKind
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
 
@@ -98,7 +93,7 @@ private struct GalleryTile: View {
                 if hasPhoto {
                     PhotoView(
                         item: item,
-                        kind: kind == .item ? .item : .location,
+                        kind: kind,
                         size: .thumbnail(480)
                     ) { image in
                         image
