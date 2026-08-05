@@ -130,9 +130,8 @@ struct HomeView: View {
                     itemToPromptPhoto = nil
                 }
             }
-            .sheet(item: $previewItem) { item in
-                LocationPhotoPreviewSheet(item: item, viewModel: viewModel)
-                    .presentationDetents([.medium, .large])
+            .fullScreenCover(item: $previewItem) { item in
+                PhotoPreviewViewer(item: item, kind: .location, viewModel: viewModel)
             }
             .sheet(isPresented: $showPhotoSource) {
                 PhotoSourceSheet(
@@ -513,6 +512,7 @@ struct HomeView: View {
                 photoSourceItem = item
                 showPhotoSource = true
             },
+            onDoubleTap: { previewItem = $0 },
             tileMenu: { item in
                 itemMenuItems(item)
             }
@@ -542,29 +542,33 @@ struct HomeView: View {
     // MARK: - Item Row
 
     private func itemRow(_ item: Item, tag: some View) -> some View {
+        itemRowBody(item, tag: tag)
+            .itemTapGestures(
+                previewEnabled: item.hasLocationPhoto,
+                onPreview: { previewItem = item },
+                onOpen: { detailItem = item }
+            )
+    }
+
+    private func itemRowBody(_ item: Item, tag: some View) -> some View {
         HStack {
             itemThumbnail(item)
 
-            Button {
-                detailItem = item
-            } label: {
-                VStack(alignment: .leading) {
-                    Text(item.name)
-                        .font(.subheadline)
-                    if let notes = item.notes {
-                        Text(notes)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    if let changedAt = item.locationChangedAt {
-                        Text("Stored \(changedAt, format: .relative(presentation: .named))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+            VStack(alignment: .leading) {
+                Text(item.name)
+                    .font(.subheadline)
+                if let notes = item.notes {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let changedAt = item.locationChangedAt {
+                    Text("Stored \(changedAt, format: .relative(presentation: .named))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .buttonStyle(.plain)
 
             Spacer()
             if !item.pairedTags.isEmpty {
@@ -581,6 +585,8 @@ struct HomeView: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(.isButton)
         .contextMenu {
             itemMenuItems(item)
         }
@@ -785,72 +791,6 @@ struct MoveItemSheet: View {
                 }
             }
         }
-    }
-}
-
-// MARK: - Location Photo Preview Sheet
-
-struct LocationPhotoPreviewSheet: View {
-    let item: Item
-    @Bindable var viewModel: StuffViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
-        NavigationStack {
-            Group {
-                if liveItem.hasLocationPhoto {
-                    VStack(spacing: 0) {
-                        PhotoView(item: liveItem, kind: .location, size: .full) { image in
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .padding()
-                        } placeholder: {
-                            ProgressView()
-                        }
-                        storageInfo(for: liveItem)
-                    }
-                } else {
-                    ContentUnavailableView("No photo", systemImage: "photo")
-                }
-            }
-            .navigationTitle(item.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func storageInfo(for item: Item) -> some View {
-        VStack(spacing: 6) {
-            if let location = viewModel.location(for: item) {
-                Label {
-                    Text(viewModel.locationPath(for: location).map(\.name).joined(separator: " › "))
-                } icon: {
-                    Text(location.emoji ?? "📍")
-                }
-                .font(.subheadline)
-            } else {
-                Label("Unassigned", systemImage: "questionmark.circle")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let changedAt = item.locationChangedAt {
-                Text("Stored \(changedAt, format: .dateTime.weekday().day().month().year().hour().minute())")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(.ultraThinMaterial)
     }
 }
 
