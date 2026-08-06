@@ -52,30 +52,6 @@ struct LocationDetailView: View {
         return viewModel.displayPath(for: location)
     }
 
-    /// Bulk-returns everything homed here. Mirrors `MoveItemsHereSheet.confirmMove`:
-    /// collaborators on the moved items are added to the destination first, or they
-    /// would lose sight of items that just moved into a location they can't see.
-    private func putAllBackHere() {
-        let dest = live
-        let targets = missingItems
-        Task {
-            if viewModel.canManageSharing(of: dest) {
-                var missingMembers: [String] = []
-                for item in targets where viewModel.canManageSharing(of: item) {
-                    missingMembers.append(contentsOf: viewModel.membersMissing(
-                        from: dest,
-                        forItemMembers: viewModel.sharedMembers(of: item)
-                    ))
-                }
-                let union = Array(Set(missingMembers))
-                if !union.isEmpty {
-                    await viewModel.addMembers(union, toLocation: dest)
-                }
-            }
-            await viewModel.moveItems(targets, toLocationId: dest.id)
-        }
-    }
-
     var body: some View {
         List {
             Section {
@@ -158,9 +134,13 @@ struct LocationDetailView: View {
                     HStack {
                         Text("Missing from here")
                         Spacer()
-                        Button("Put all back here", action: putAllBackHere)
-                            .font(.caption)
-                            .textCase(nil)
+                        // Every item here is homed at `live`, so putBackItems sends them
+                        // exactly where this button promises — and handles the auto-share.
+                        Button("Put all back here") {
+                            Task { await viewModel.putBackItems(missingItems) }
+                        }
+                        .font(.caption)
+                        .textCase(nil)
                     }
                 }
             }

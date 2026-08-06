@@ -106,8 +106,18 @@ final class FirebaseDataService: DataService, @unchecked Sendable {
         try itemsCollection(owner: owner).document(item.id).setData(from: item)
     }
 
+    /// A `merge: true` write encodes optionals with `encodeIfPresent`, so a nil field emits
+    /// no key and the stored value survives. Clearing the supposed location therefore has to
+    /// delete the field explicitly, or the old id comes straight back on the next snapshot.
+    /// Sent in the same write as the merge — `FieldValue.delete()` is legal in a merging set.
+    /// `completion: nil` keeps this fire-and-forget like `setData(from:merge:)` did; the
+    /// awaiting overload would never return while offline.
     func updateItem(_ item: Item) async throws {
-        try itemsCollection(owner: owner(of: item.ownerId)).document(item.id).setData(from: item, merge: true)
+        var data = try Firestore.Encoder().encode(item)
+        if item.homeLocationId == nil { data["homeLocationId"] = FieldValue.delete() }
+        itemsCollection(owner: owner(of: item.ownerId))
+            .document(item.id)
+            .setData(data, merge: true, completion: nil)
     }
 
     func deleteItem(_ item: Item) async throws {

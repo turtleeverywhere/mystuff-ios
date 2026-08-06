@@ -511,7 +511,11 @@ struct ItemFormSheet: View {
         _name = State(initialValue: item?.name ?? "")
         _notes = State(initialValue: item?.notes ?? "")
         _selectedLocationId = State(initialValue: item?.locationId ?? initialLocationId ?? "__unassigned__")
-        _selectedHomeLocationId = State(initialValue: item?.homeLocationId ?? "__nohome__")
+        // A home location that has since been deleted would leave the picker on a tag
+        // no row carries: it renders blank and Save writes the stale id back.
+        let storedHome = item?.homeLocationId
+        let resolvedHome = viewModel.locations.contains { $0.id == storedHome } ? storedHome : nil
+        _selectedHomeLocationId = State(initialValue: resolvedHome ?? "__nohome__")
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
         _useSameForLocation = State(initialValue: item == nil)
         _shareWith = State(initialValue: [])

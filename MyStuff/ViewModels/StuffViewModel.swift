@@ -723,17 +723,12 @@ final class StuffViewModel {
     // MARK: - Misplaced Items
 
     /// Authoritative misplaced check. Adds an existence guard on top of
-    /// `Item.isMisplaced`: a `merge: true` write omits nil, so clearing
-    /// `homeLocationId` never removes the field in Firestore. Requiring the home
-    /// location to still exist makes a stale pointer harmless.
+    /// `Item.isMisplaced`: a home pointer can outlive its location (a doc written
+    /// by an older client, or a location deleted while this device was offline).
+    /// Requiring the home location to still exist makes such a pointer harmless.
     func isMisplaced(_ item: Item) -> Bool {
         guard item.isMisplaced, let homeId = item.homeLocationId else { return false }
         return locations.contains { $0.id == homeId }
-    }
-
-    /// Every item that is away from its home location.
-    var misplacedItems: [Item] {
-        items.filter { isMisplaced($0) }
     }
 
     /// Items whose home is `location` but which are not currently there.
@@ -742,20 +737,41 @@ final class StuffViewModel {
     }
 
     /// Send each item back to its own home location. Unlike `moveItems`, destinations
-    /// differ per item, so this resolves each one individually and fires a single
-    /// success haptic for the whole batch. Items whose home no longer exists are skipped.
+    /// differ per item, so this groups by home location and fires a single success
+    /// haptic for the whole batch. Items whose home no longer exists are skipped.
+    ///
+    /// Mirrors `MoveItemsHereSheet.confirmMove`: each destination is shared with the
+    /// moved items' collaborators *before* the move, or those collaborators keep seeing
+    /// the item but with no location. Owner-managed entities only, on both sides.
     func putBackItems(_ items: [Item]) async {
         let targets = items.filter { isMisplaced($0) }
         guard !targets.isEmpty else { return }
+        let byHome = Dictionary(grouping: targets) { $0.homeLocationId ?? "" }
         do {
-            for target in targets {
-                guard var updated = self.items.first(where: { $0.id == target.id }) else { continue }
-                updated.locationId = updated.homeLocationId
-                updated.locationChangedAt = .now
-                updated.updatedAt = .now
-                try await service.updateItem(updated)
-                if let index = self.items.firstIndex(where: { $0.id == updated.id }) {
-                    self.items[index] = updated
+            for (homeId, group) in byHome {
+                guard let destination = locations.first(where: { $0.id == homeId }) else { continue }
+                if canManageSharing(of: destination) {
+                    var missing: [String] = []
+                    for item in group where canManageSharing(of: item) {
+                        missing.append(contentsOf: membersMissing(
+                            from: destination,
+                            forItemMembers: sharedMembers(of: item)
+                        ))
+                    }
+                    let union = Array(Set(missing))
+                    if !union.isEmpty {
+                        await addMembers(union, toLocation: destination)
+                    }
+                }
+                for target in group {
+                    guard var updated = self.items.first(where: { $0.id == target.id }) else { continue }
+                    updated.locationId = updated.homeLocationId
+                    updated.locationChangedAt = .now
+                    updated.updatedAt = .now
+                    try await service.updateItem(updated)
+                    if let index = self.items.firstIndex(where: { $0.id == updated.id }) {
+                        self.items[index] = updated
+                    }
                 }
             }
             HapticManager.success()
@@ -896,14 +912,21 @@ final class StuffViewModel {
             }
             try await service.deleteLocation(location)
             locations.removeAll { $0.id == location.id }
-            // Unassign items that were at this location, and drop home pointers aimed
-            // at it. One combined pass so an item that was both here and homed here
-            // takes a single write.
-            for i in items.indices where items[i].locationId == location.id || items[i].homeLocationId == location.id {
-                if items[i].locationId == location.id { items[i].locationId = nil }
-                if items[i].homeLocationId == location.id { items[i].homeLocationId = nil }
-                items[i].updatedAt = .now
-                try await service.updateItem(items[i])
+            // Unassign items that were at this location, and drop home pointers aimed at
+            // it (the write clears the stored field, see FirebaseDataService.updateItem).
+            // One combined pass so an item that was both here and homed here takes a
+            // single write. Ids are snapshotted and each item re-found afterwards — the
+            // live listener can replace `items` across any of these awaits.
+            let affectedIds = items
+                .filter { $0.locationId == location.id || $0.homeLocationId == location.id }
+                .map(\.id)
+            for id in affectedIds {
+                guard var updated = items.first(where: { $0.id == id }) else { continue }
+                if updated.locationId == location.id { updated.locationId = nil }
+                if updated.homeLocationId == location.id { updated.homeLocationId = nil }
+                updated.updatedAt = .now
+                try await service.updateItem(updated)
+                if let index = items.firstIndex(where: { $0.id == id }) { items[index] = updated }
             }
             HapticManager.impact()
         } catch {
