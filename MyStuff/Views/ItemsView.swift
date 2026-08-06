@@ -70,7 +70,8 @@ struct ItemsView: View {
                                 name: result.name,
                                 notes: result.notes,
                                 locationId: result.locationId,
-                                categoryId: result.categoryId
+                                categoryId: result.categoryId,
+                                homeLocationId: result.homeLocationId
                             )
                             guard let newItem = viewModel.items.first(where: { $0.id == result.id }) else { return }
                             if let data = result.itemPhotoData {
@@ -97,6 +98,7 @@ struct ItemsView: View {
                         updated.name = result.name
                         updated.notes = result.notes
                         updated.locationId = result.locationId
+                        updated.homeLocationId = result.homeLocationId
                         updated.categoryId = result.categoryId
                         Task {
                             await viewModel.updateItem(updated)
@@ -374,6 +376,7 @@ struct ItemFormResult {
     let name: String
     let notes: String?
     let locationId: String?
+    let homeLocationId: String?
     let categoryId: String?
     let itemPhotoData: Data?
     let locationPhotoData: Data?
@@ -390,6 +393,7 @@ struct ItemFormSheet: View {
     @State private var name: String
     @State private var notes: String
     @State private var selectedLocationId: String
+    @State private var selectedHomeLocationId: String
     @State private var selectedCategoryId: String
     @State private var showingNewCategory = false
     @State private var newCategoryName = ""
@@ -417,6 +421,7 @@ struct ItemFormSheet: View {
     private enum PhotoTarget { case item, location }
 
     private let unassignedSentinel = "__unassigned__"
+    private let noHomeSentinel = "__nohome__"
     private let uncategorizedSentinel = "__uncategorized__"
 
     /// Live item from the view model (reflects immediate privacy changes), or nil in create mode.
@@ -437,6 +442,7 @@ struct ItemFormSheet: View {
         _name = State(initialValue: item?.name ?? "")
         _notes = State(initialValue: item?.notes ?? "")
         _selectedLocationId = State(initialValue: item?.locationId ?? initialLocationId ?? "__unassigned__")
+        _selectedHomeLocationId = State(initialValue: item?.homeLocationId ?? "__nohome__")
         _selectedCategoryId = State(initialValue: item?.categoryId ?? "__uncategorized__")
         _useSameForLocation = State(initialValue: item == nil)
         _shareWith = State(initialValue: [])
@@ -581,6 +587,19 @@ struct ItemFormSheet: View {
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Scan location NFC tag")
                     }
+
+                    Picker("Supposed location", selection: $selectedHomeLocationId) {
+                        Text("None").tag(noHomeSentinel)
+                        ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
+                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
+                                .tag(entry.location.id)
+                        }
+                    }
+
+                    Button("Same as current location") {
+                        selectedHomeLocationId = selectedLocationId
+                    }
+                    .disabled(selectedLocationId == unassignedSentinel || selectedHomeLocationId == selectedLocationId)
                 }
 
                 Section("Category") {
@@ -642,6 +661,7 @@ struct ItemFormSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let locationId = selectedLocationId == unassignedSentinel ? nil : selectedLocationId
+                        let homeLocationId = selectedHomeLocationId == noHomeSentinel ? nil : selectedHomeLocationId
                         let categoryId = selectedCategoryId == uncategorizedSentinel ? nil : selectedCategoryId
                         let resolvedLocationData: Data? = useSameForLocation ? photoData : locationPhotoData
                         onSave(ItemFormResult(
@@ -649,6 +669,7 @@ struct ItemFormSheet: View {
                             name: name,
                             notes: notes.isEmpty ? nil : notes,
                             locationId: locationId,
+                            homeLocationId: homeLocationId,
                             categoryId: categoryId,
                             itemPhotoData: photoData,
                             locationPhotoData: resolvedLocationData,

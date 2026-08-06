@@ -193,7 +193,8 @@ struct LocationDetailView: View {
                             name: result.name,
                             notes: result.notes,
                             locationId: result.locationId,
-                            categoryId: result.categoryId
+                            categoryId: result.categoryId,
+                            homeLocationId: result.homeLocationId
                         )
                         guard let newItem = viewModel.items.first(where: { $0.id == result.id }) else { return }
                         if let data = result.itemPhotoData {
