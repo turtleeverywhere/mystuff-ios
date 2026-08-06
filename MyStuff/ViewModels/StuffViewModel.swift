@@ -398,9 +398,9 @@ final class StuffViewModel {
 
     /// `id` is defaulted so existing callers are unaffected. The form sheets
     /// pass a pre-allocated draft id so codes can be paired before the item exists.
-    func addItem(id: String = UUID().uuidString, name: String, notes: String?, locationId: String?, categoryId: String?) async {
+    func addItem(id: String = UUID().uuidString, name: String, notes: String?, locationId: String?, categoryId: String?, homeLocationId: String? = nil) async {
         let owner = service.currentUserId
-        let item = Item(id: id, name: name, notes: notes, locationId: locationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil, ownerId: owner, memberIds: [owner])
+        let item = Item(id: id, name: name, notes: notes, locationId: locationId, homeLocationId: homeLocationId, categoryId: categoryId, locationChangedAt: locationId != nil ? .now : nil, ownerId: owner, memberIds: [owner])
         do {
             try await service.addItem(item)
             if !items.contains(where: { $0.id == item.id }) {
@@ -720,6 +720,50 @@ final class StuffViewModel {
         }
     }
 
+    // MARK: - Misplaced Items
+
+    /// Authoritative misplaced check. Adds an existence guard on top of
+    /// `Item.isMisplaced`: a `merge: true` write omits nil, so clearing
+    /// `homeLocationId` never removes the field in Firestore. Requiring the home
+    /// location to still exist makes a stale pointer harmless.
+    func isMisplaced(_ item: Item) -> Bool {
+        guard item.isMisplaced, let homeId = item.homeLocationId else { return false }
+        return locations.contains { $0.id == homeId }
+    }
+
+    /// Every item that is away from its home location.
+    var misplacedItems: [Item] {
+        items.filter { isMisplaced($0) }
+    }
+
+    /// Items whose home is `location` but which are not currently there.
+    func missingItems(for location: Location) -> [Item] {
+        items.filter { $0.homeLocationId == location.id && $0.locationId != location.id }
+    }
+
+    /// Send each item back to its own home location. Unlike `moveItems`, destinations
+    /// differ per item, so this resolves each one individually and fires a single
+    /// success haptic for the whole batch. Items whose home no longer exists are skipped.
+    func putBackItems(_ items: [Item]) async {
+        let targets = items.filter { isMisplaced($0) }
+        guard !targets.isEmpty else { return }
+        do {
+            for target in targets {
+                guard var updated = self.items.first(where: { $0.id == target.id }) else { continue }
+                updated.locationId = updated.homeLocationId
+                updated.locationChangedAt = .now
+                updated.updatedAt = .now
+                try await service.updateItem(updated)
+                if let index = self.items.firstIndex(where: { $0.id == updated.id }) {
+                    self.items[index] = updated
+                }
+            }
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Reparent `location` to `newParentId` (nil = root). When the destination is shared,
     /// additively propagate the destination's members across the moved subtree — the moved
     /// location, its descendant locations, and every item within — but only for entities the
@@ -852,9 +896,12 @@ final class StuffViewModel {
             }
             try await service.deleteLocation(location)
             locations.removeAll { $0.id == location.id }
-            // Unassign items that were at this location
-            for i in items.indices where items[i].locationId == location.id {
-                items[i].locationId = nil
+            // Unassign items that were at this location, and drop home pointers aimed
+            // at it. One combined pass so an item that was both here and homed here
+            // takes a single write.
+            for i in items.indices where items[i].locationId == location.id || items[i].homeLocationId == location.id {
+                if items[i].locationId == location.id { items[i].locationId = nil }
+                if items[i].homeLocationId == location.id { items[i].homeLocationId = nil }
                 items[i].updatedAt = .now
                 try await service.updateItem(items[i])
             }

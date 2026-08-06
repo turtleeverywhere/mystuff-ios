@@ -5,6 +5,10 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
     var name: String
     var notes: String?
     var locationId: String?
+    /// Location this item is *supposed* to live in. nil = no expected place, so the
+    /// item can never be misplaced. Optional so legacy docs decode cleanly — same
+    /// idiom as ownerId/memberIds.
+    var homeLocationId: String?
     var categoryId: String?
     /// Local hint — relative path "Photos/{id}_photo.jpg" or nil. Primary store for location photo.
     var photoURL: String?
@@ -40,6 +44,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         name: String,
         notes: String? = nil,
         locationId: String? = nil,
+        homeLocationId: String? = nil,
         categoryId: String? = nil,
         photoURL: String? = nil,
         itemPhotoURL: String? = nil,
@@ -59,6 +64,7 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.name = name
         self.notes = notes
         self.locationId = locationId
+        self.homeLocationId = homeLocationId
         self.categoryId = categoryId
         self.photoURL = photoURL
         self.itemPhotoURL = itemPhotoURL
@@ -73,6 +79,16 @@ struct Item: Identifiable, Codable, Hashable, Sendable {
         self.shareBatchId = shareBatchId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    /// True when this item has a home location and is not currently in it.
+    /// Matching is exact: sitting in a *child* of the home location still counts as
+    /// misplaced, and a nil `locationId` counts as misplaced. Views must not read
+    /// this directly — go through `StuffViewModel.isMisplaced(_:)`, which also
+    /// verifies the home location still exists.
+    var isMisplaced: Bool {
+        guard let homeLocationId else { return false }
+        return locationId != homeLocationId
     }
 
     /// Non-optional membership convenience; falls back to `[ownerId]` for legacy docs.
