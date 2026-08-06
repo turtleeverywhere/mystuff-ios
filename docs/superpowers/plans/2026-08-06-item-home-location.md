@@ -40,7 +40,7 @@
 | `MyStuff/ViewModels/StuffViewModel.swift` | `isMisplaced(_:)`, `misplacedItems`, `missingItems(for:)`, `putBackItems(_:)`, `addItem` param, `deleteLocation` cleanup | 1 |
 | `MyStuff/Views/ItemsView.swift` | `ItemFormResult.homeLocationId`, form picker, add/edit call sites, Items-tab filter bar, badges, Put Back menu | 2, 3, 5 |
 | `MyStuff/Views/LocationDetailView.swift` | add-item call site, badges, Put Back menu, "Missing from here" section | 2, 3, 6 |
-| `MyStuff/Views/MisplacedBadge.swift` | **new** — the ⚠️ capsule | 3 |
+| `MyStuff/Views/MisplacedBadge.swift` | **new** — the ⚠️ capsule + shared `PutBackMenuButton` | 3 |
 | `MyStuff/Views/ItemGalleryGrid.swift` | badge on gallery tiles | 3 |
 | `MyStuff/Views/ItemDetailSheet.swift` | home location chip in `infoSection` | 3 |
 | `MyStuff/Views/ItemFilterBar.swift` | **new** — `ItemFilter` value type + shared filter bar view | 4 |
@@ -359,7 +359,7 @@ EOF
 
 **Interfaces:**
 - Consumes: `StuffViewModel.isMisplaced(_:)`, `StuffViewModel.putBackItems(_:)` from Task 1.
-- Produces: `MisplacedBadge(iconOnly: Bool = false)`.
+- Produces: `MisplacedBadge(iconOnly: Bool = false)`, `PutBackMenuButton(item:viewModel:)`.
 
 - [ ] **Step 1: Create the badge**
 
@@ -517,11 +517,19 @@ In `MyStuff/Views/ItemDetailSheet.swift`, in `infoSection`, directly after the `
                 }
 ```
 
-- [ ] **Step 8: Add "Put Back" to all three context menus**
+- [ ] **Step 8: Add a shared "Put Back" menu button**
 
-Add this block as the **first** entry inside `itemMenuItems(_:)` in each of `HomeView.swift`, `ItemsView.swift`, and `LocationDetailView.swift` (identical in all three — repeat it verbatim):
+Append to `MyStuff/Views/MisplacedBadge.swift` (it lives beside the badge because the
+two always appear together):
 
 ```swift
+/// Context-menu entry that returns an item to its supposed location. Renders nothing
+/// when the item is not misplaced, so callers can drop it into any menu unconditionally.
+struct PutBackMenuButton: View {
+    let item: Item
+    let viewModel: StuffViewModel
+
+    var body: some View {
         if viewModel.isMisplaced(item) {
             Button {
                 Task { await viewModel.putBackItems([item]) }
@@ -529,6 +537,18 @@ Add this block as the **first** entry inside `itemMenuItems(_:)` in each of `Hom
                 Label("Put Back", systemImage: "arrow.uturn.left.circle")
             }
         }
+    }
+}
+```
+
+> `body` returns a conditional view, so it needs no `@ViewBuilder` attribute on a
+> `some View` property — SwiftUI's `View` protocol already applies one to `body`.
+
+Then add this line as the **first** entry inside `itemMenuItems(_:)` in each of
+`HomeView.swift`, `ItemsView.swift`, and `LocationDetailView.swift`:
+
+```swift
+        PutBackMenuButton(item: item, viewModel: viewModel)
 ```
 
 - [ ] **Step 9: Build**
