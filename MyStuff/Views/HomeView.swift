@@ -505,6 +505,7 @@ struct HomeView: View {
     private func galleryGrid(_ items: [Item]) -> some View {
         ItemGalleryGrid(
             items: items,
+            isMisplaced: { viewModel.isMisplaced($0) },
             kind: .location,
             columns: horizontalSizeClass == .regular ? galleryColumns : 2,
             onTap: { detailItem = $0 },
@@ -521,6 +522,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private func itemMenuItems(_ item: Item) -> some View {
+        PutBackMenuButton(item: item, viewModel: viewModel)
         Button {
             selectedItem = item
         } label: {
@@ -571,6 +573,9 @@ struct HomeView: View {
             }
 
             Spacer()
+            if viewModel.isMisplaced(item) {
+                MisplacedBadge(iconOnly: true)
+            }
             if !item.pairedTags.isEmpty {
                 NFCBadge(iconOnly: true)
             }

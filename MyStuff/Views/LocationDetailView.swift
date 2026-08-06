@@ -103,6 +103,7 @@ struct LocationDetailView: View {
                 } else if isGallery {
                     ItemGalleryGrid(
                         items: directItems,
+                        isMisplaced: { viewModel.isMisplaced($0) },
                         kind: .location,
                         columns: horizontalSizeClass == .regular ? galleryColumns : 2,
                         onTap: { detailItem = $0 },
@@ -255,16 +256,23 @@ struct LocationDetailView: View {
     }
 
     private func itemRowBody(_ item: Item) -> some View {
-        Text(item.name)
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .accessibilityAddTraits(.isButton)
-            .contextMenu { itemMenuItems(item) }
+        HStack {
+            Text(item.name)
+                .foregroundStyle(.primary)
+            Spacer()
+            if viewModel.isMisplaced(item) {
+                MisplacedBadge(iconOnly: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(.isButton)
+        .contextMenu { itemMenuItems(item) }
     }
 
     @ViewBuilder
     private func itemMenuItems(_ item: Item) -> some View {
+        PutBackMenuButton(item: item, viewModel: viewModel)
         Button {
             detailItem = item
         } label: {

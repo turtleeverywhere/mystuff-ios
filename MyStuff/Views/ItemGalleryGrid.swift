@@ -3,6 +3,8 @@ import SwiftUI
 /// Photo grid with configurable column count, used by the Home and Items gallery modes.
 struct ItemGalleryGrid<TileMenu: View>: View {
     let items: [Item]
+    /// Per-item misplaced flag. Injected because this grid has no view model.
+    let isMisplaced: (Item) -> Bool
     let kind: PhotoKind
     let columns: Int
     let onTap: (Item) -> Void
@@ -16,6 +18,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
 
     init(
         items: [Item],
+        isMisplaced: @escaping (Item) -> Bool = { _ in false },
         kind: PhotoKind,
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
@@ -24,6 +27,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
         @ViewBuilder tileMenu: @escaping (Item) -> TileMenu
     ) {
         self.items = items
+        self.isMisplaced = isMisplaced
         self.kind = kind
         self.columns = columns
         self.onTap = onTap
@@ -44,6 +48,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
     private func tile(_ item: Item) -> some View {
         let base = GalleryTile(
             item: item,
+            isMisplaced: isMisplaced(item),
             kind: kind,
             onTap: onTap,
             onAddPhoto: onAddPhoto,
@@ -60,6 +65,7 @@ struct ItemGalleryGrid<TileMenu: View>: View {
 extension ItemGalleryGrid where TileMenu == EmptyView {
     init(
         items: [Item],
+        isMisplaced: @escaping (Item) -> Bool = { _ in false },
         kind: PhotoKind,
         columns: Int = 2,
         onTap: @escaping (Item) -> Void,
@@ -67,6 +73,7 @@ extension ItemGalleryGrid where TileMenu == EmptyView {
         onDoubleTap: ((Item) -> Void)? = nil
     ) {
         self.items = items
+        self.isMisplaced = isMisplaced
         self.kind = kind
         self.columns = columns
         self.onTap = onTap
@@ -80,6 +87,7 @@ extension ItemGalleryGrid where TileMenu == EmptyView {
 
 private struct GalleryTile: View {
     let item: Item
+    let isMisplaced: Bool
     let kind: PhotoKind
     let onTap: (Item) -> Void
     let onAddPhoto: (Item) -> Void
@@ -128,10 +136,15 @@ private struct GalleryTile: View {
                 nameOverlay
             }
             .overlay(alignment: .topTrailing) {
-                if !item.pairedTags.isEmpty {
-                    NFCBadge(iconOnly: true)
-                        .padding(6)
+                HStack(spacing: 4) {
+                    if isMisplaced {
+                        MisplacedBadge(iconOnly: true)
+                    }
+                    if !item.pairedTags.isEmpty {
+                        NFCBadge(iconOnly: true)
+                    }
                 }
+                .padding(6)
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))

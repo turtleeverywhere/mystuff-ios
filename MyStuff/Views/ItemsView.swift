@@ -196,6 +196,9 @@ struct ItemsView: View {
                     }
                 }
                 Spacer()
+                if viewModel.isMisplaced(item) {
+                    MisplacedBadge(iconOnly: true)
+                }
                 if !item.pairedTags.isEmpty {
                     NFCBadge(iconOnly: true)
                 }
@@ -225,6 +228,7 @@ struct ItemsView: View {
         ScrollView {
             ItemGalleryGrid(
                 items: viewModel.filteredItems,
+                isMisplaced: { viewModel.isMisplaced($0) },
                 kind: .item,
                 columns: horizontalSizeClass == .regular ? galleryColumns : 2,
                 onTap: { editingItem = $0 },
@@ -245,6 +249,7 @@ struct ItemsView: View {
 
     @ViewBuilder
     private func itemMenuItems(_ item: Item) -> some View {
+        PutBackMenuButton(item: item, viewModel: viewModel)
         Button {
             movingItem = item
         } label: {

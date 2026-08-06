@@ -287,6 +287,20 @@ struct ItemDetailSheet: View {
                         .padding(.vertical, 6)
                         .background(.ultraThinMaterial, in: Capsule())
                 }
+
+                if viewModel.isMisplaced(liveItem),
+                   let home = viewModel.locations.first(where: { $0.id == liveItem.homeLocationId }) {
+                    Label {
+                        Text("Belongs in \(viewModel.displayPath(for: home))")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
