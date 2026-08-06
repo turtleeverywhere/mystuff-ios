@@ -13,11 +13,46 @@ struct ItemsView: View {
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isUploading = false
+    @State private var filter = ItemFilter()
+    @State private var showFilters = false
     @AppStorage("itemsViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isGallery: Bool { viewMode == "gallery" }
+
+    /// `viewModel.filteredItems` has already applied the search field, so the
+    /// filter runs with an empty query to avoid searching twice.
+    private var visibleItems: [Item] {
+        filter.apply(to: viewModel.filteredItems, searchText: "", viewModel: viewModel)
+    }
+
+    private var isFiltering: Bool {
+        !viewModel.searchText.isEmpty || filter.isActive
+    }
+
+    private var putBackTargets: [Item] {
+        guard filter.misplacedOnly else { return [] }
+        return visibleItems
+    }
+
+    private var filterBar: some View {
+        ItemFilterBar(
+            filter: $filter,
+            isExpanded: $showFilters,
+            viewModel: viewModel,
+            isFiltering: isFiltering,
+            putBackTargets: putBackTargets,
+            onPutAllBack: {
+                let targets = putBackTargets
+                Task { await viewModel.putBackItems(targets) }
+            },
+            onClearAll: {
+                filter = ItemFilter()
+                viewModel.searchText = ""
+            }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -165,8 +200,19 @@ struct ItemsView: View {
 
     private var itemsList: some View {
         List {
-            ForEach(viewModel.filteredItems) { item in
-                itemRow(item)
+            Section {
+                filterBar
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+            }
+
+            if visibleItems.isEmpty {
+                noMatchesState
+                    .listRowBackground(Color.clear)
+            } else {
+                ForEach(visibleItems) { item in
+                    itemRow(item)
+                }
             }
         }
     }
@@ -226,21 +272,29 @@ struct ItemsView: View {
 
     private var itemsGallery: some View {
         ScrollView {
-            ItemGalleryGrid(
-                items: viewModel.filteredItems,
-                isMisplaced: { viewModel.isMisplaced($0) },
-                kind: .item,
-                columns: horizontalSizeClass == .regular ? galleryColumns : 2,
-                onTap: { editingItem = $0 },
-                onAddPhoto: { item in
-                    photoSourceItem = item
-                    showPhotoSource = true
-                },
-                onDoubleTap: { previewItem = $0 },
-                tileMenu: { item in
-                    itemMenuItems(item)
+            VStack(spacing: 16) {
+                filterBar
+
+                if visibleItems.isEmpty {
+                    noMatchesState
+                } else {
+                    ItemGalleryGrid(
+                        items: visibleItems,
+                        isMisplaced: { viewModel.isMisplaced($0) },
+                        kind: .item,
+                        columns: horizontalSizeClass == .regular ? galleryColumns : 2,
+                        onTap: { editingItem = $0 },
+                        onAddPhoto: { item in
+                            photoSourceItem = item
+                            showPhotoSource = true
+                        },
+                        onDoubleTap: { previewItem = $0 },
+                        tileMenu: { item in
+                            itemMenuItems(item)
+                        }
+                    )
                 }
-            )
+            }
             .padding()
         }
     }
@@ -368,6 +422,16 @@ struct ItemsView: View {
                 showingAddSheet = true
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// Shown when items exist but none survive the active filters — the full-empty
+    /// `emptyState` would wrongly suggest the user has no items at all.
+    private var noMatchesState: some View {
+        ContentUnavailableView {
+            Label("No items match these filters", systemImage: "line.3.horizontal.decrease")
+        } description: {
+            Text("Try clearing a filter or the search field.")
         }
     }
 }
