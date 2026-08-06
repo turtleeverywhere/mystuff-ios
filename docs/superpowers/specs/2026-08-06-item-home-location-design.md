@@ -87,25 +87,71 @@ that constructs an item from a form result, alongside the existing
 `locationId`/`categoryId` assignment. `StuffViewModel.addItem` gains a
 `homeLocationId: String?` parameter.
 
-### Home tab filter (`HomeView`)
+### Shared filter bar (`ItemFilterBar`)
 
-`filterBar` gains a **Status** row containing one chip, "⚠️ Misplaced", backed by
-`@State private var filterMisplaced = false`.
+`HomeView.filterBar` is extracted into a new file `MyStuff/Views/ItemFilterBar.swift`
+so the Home and Items tabs share one implementation. Two types live there:
 
-- ANDs with search, category, and location filters inside `homeFilteredItems`.
-- Counts toward the filter-count badge and participates in `isFiltering`.
-- Reset by "Clear All".
-- While active, a **"Put All Back (n)"** button appears in the filter bar. It acts on
-  the currently visible misplaced items (i.e. after all other active filters) and calls
-  `putBackItems`.
+```swift
+/// The filter selection. Value type so each host view owns its own state.
+struct ItemFilter: Equatable {
+    var categoryIds: Set<String> = []
+    var locationIds: Set<String> = []
+    var misplacedOnly = false
 
-### Items tab filter (`ItemsView`)
+    var isActive: Bool                 // any facet set
+    var activeCount: Int               // for the header badge
 
-`ItemsView` has search only, no filter bar. Add a toolbar toggle button using
-`exclamationmark.triangle` (filled while active) that narrows the displayed items to
-misplaced ones. The list and gallery paths both read the narrowed collection. While
-active, an overflow-menu action offers the same **"Put All Back"** over the visible
-misplaced items.
+    /// Applies every facet plus `searchText`. Location matching includes
+    /// descendants of each selected location, as the Home filter does today.
+    func apply(to items: [Item], searchText: String, viewModel: StuffViewModel) -> [Item]
+}
+
+/// Collapsible chip bar: Categories, Locations, Status, and the action row.
+struct ItemFilterBar: View {
+    @Binding var filter: ItemFilter
+    @Binding var isExpanded: Bool
+    let viewModel: StuffViewModel
+    let onPutAllBack: () -> Void
+    let putBackCount: Int
+}
+```
+
+The bar renders the existing Categories and Locations chip rows unchanged, adds a
+**Status** row holding one chip — "⚠️ Misplaced" — and keeps the "Clear All" button
+(which now also resets `misplacedOnly`). `filterChip` moves here as a private helper.
+
+When `misplacedOnly` is on and `putBackCount > 0`, the bar shows a **"Put All Back (n)"**
+button that calls `onPutAllBack`. Each host passes its own currently-visible misplaced
+items, so the action always matches what the user can see.
+
+Search text stays owned by each host (`HomeView` has a local `homeSearchText`,
+`ItemsView` binds `viewModel.searchText`) and is passed into `apply(to:searchText:viewModel:)`.
+
+### Home tab (`HomeView`)
+
+`filterCategoryIds`, `filterLocationIds`, and the inline `filterBar`/`filterChip`
+bodies are replaced by `@State private var filter = ItemFilter()` plus the shared
+`ItemFilterBar`. `homeFilteredItems`, `isFiltering`, and `filtered(_:)` delegate to
+`filter`, preserving current behaviour (including the empty-section rules that key off
+`isFiltering`). This removes roughly 100 lines from `HomeView`.
+
+### Items tab (`ItemsView`)
+
+`ItemsView` gains the same `ItemFilterBar`, placed above the item list and above the
+gallery grid, with its own `@State private var filter` and `@State private var showFilters`.
+Both the list and gallery paths read one filtered collection derived from
+`filter.apply(to: viewModel.filteredItems, searchText: "", viewModel:)` — search is
+already applied by `viewModel.filteredItems`, so it is not passed twice.
+
+In the `List` path (`itemsList`) the bar is a section row with `listRowInsets(EdgeInsets())`
+and a clear row background, matching how `MoveItemsHereSheet` hosts its grouping picker.
+In the gallery path (`itemsGallery`) it sits above `ItemGalleryGrid` inside the existing
+`ScrollView`. No new toolbar button is added.
+
+`ItemsView`'s empty state currently triggers on `viewModel.items.isEmpty`. When filters
+narrow the result to nothing but items do exist, show a "No items match these filters"
+`ContentUnavailableView` instead, keeping the filter bar visible so the user can clear it.
 
 ### Location detail (`LocationDetailView`)
 
