@@ -15,8 +15,7 @@ struct HomeView: View {
     @State private var showPhotoPicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var homeSearchText = ""
-    @State private var filterCategoryIds: Set<String> = []
-    @State private var filterLocationIds: Set<String> = []
+    @State private var filter = ItemFilter()
     @State private var showFilters = false
     @AppStorage("homeViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
@@ -26,33 +25,26 @@ struct HomeView: View {
 
     /// Items matching current search + filters
     private var homeFilteredItems: Set<String> {
-        var result = viewModel.items
-        if !homeSearchText.isEmpty {
-            result = result.filter {
-                $0.name.localizedCaseInsensitiveContains(homeSearchText)
-                || ($0.notes?.localizedCaseInsensitiveContains(homeSearchText) ?? false)
-            }
-        }
-        if !filterCategoryIds.isEmpty {
-            result = result.filter { filterCategoryIds.contains($0.categoryId ?? "") }
-        }
-        if !filterLocationIds.isEmpty {
-            // Include items at selected locations OR any of their descendants
-            let allIds = filterLocationIds.reduce(into: filterLocationIds) { acc, id in
-                acc.formUnion(viewModel.allDescendantIds(of: id))
-            }
-            result = result.filter { allIds.contains($0.locationId ?? "") }
-        }
-        return Set(result.map(\.id))
+        Set(visibleItems.map(\.id))
+    }
+
+    private var visibleItems: [Item] {
+        filter.apply(to: viewModel.items, searchText: homeSearchText, viewModel: viewModel)
     }
 
     private var isFiltering: Bool {
-        !homeSearchText.isEmpty || !filterCategoryIds.isEmpty || !filterLocationIds.isEmpty
+        !homeSearchText.isEmpty || filter.isActive
     }
 
     private func filtered(_ items: [Item]) -> [Item] {
         guard isFiltering else { return items }
         return items.filter { homeFilteredItems.contains($0.id) }
+    }
+
+    /// What "Put All Back" acts on: everything currently visible that is misplaced.
+    private var putBackTargets: [Item] {
+        guard filter.misplacedOnly else { return [] }
+        return visibleItems
     }
 
     var body: some View {
@@ -177,7 +169,21 @@ struct HomeView: View {
                 }
                 .pickerStyle(.segmented)
 
-                filterBar
+                ItemFilterBar(
+                    filter: $filter,
+                    isExpanded: $showFilters,
+                    viewModel: viewModel,
+                    isFiltering: isFiltering,
+                    putBackTargets: putBackTargets,
+                    onPutAllBack: {
+                        let targets = putBackTargets
+                        Task { await viewModel.putBackItems(targets) }
+                    },
+                    onClearAll: {
+                        filter = ItemFilter()
+                        homeSearchText = ""
+                    }
+                )
 
                 switch viewModel.selectedGrouping {
                 case .location:
@@ -188,107 +194,6 @@ struct HomeView: View {
             }
             .padding()
         }
-    }
-
-    // MARK: - Filter Bar
-
-    private var filterBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation { showFilters.toggle() }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                    Text("Filters")
-                        .font(.subheadline)
-                    if isFiltering {
-                        let count = (filterCategoryIds.isEmpty ? 0 : 1) + (filterLocationIds.isEmpty ? 0 : 1)
-                        if count > 0 {
-                            Text("\(count)")
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.accentColor, in: Capsule())
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: showFilters ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                }
-                .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-
-            if showFilters {
-                // Category filters
-                if !viewModel.categories.isEmpty {
-                    Text("Categories")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(viewModel.categories) { category in
-                                filterChip(
-                                    label: category.name,
-                                    isSelected: filterCategoryIds.contains(category.id)
-                                ) {
-                                    if filterCategoryIds.contains(category.id) {
-                                        filterCategoryIds.remove(category.id)
-                                    } else {
-                                        filterCategoryIds.insert(category.id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Location filters
-                if !viewModel.locations.isEmpty {
-                    Text("Locations")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                                filterChip(
-                                    label: String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name,
-                                    isSelected: filterLocationIds.contains(entry.location.id)
-                                ) {
-                                    if filterLocationIds.contains(entry.location.id) {
-                                        filterLocationIds.remove(entry.location.id)
-                                    } else {
-                                        filterLocationIds.insert(entry.location.id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if isFiltering {
-                    Button("Clear All") {
-                        filterCategoryIds.removeAll()
-                        filterLocationIds.removeAll()
-                        homeSearchText = ""
-                    }
-                    .font(.caption)
-                }
-            }
-        }
-    }
-
-    private func filterChip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor.opacity(0.2) : .clear, in: Capsule())
-                .overlay(Capsule().stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Location Grouping
