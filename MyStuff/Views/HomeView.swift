@@ -682,6 +682,16 @@ struct MoveItemSheet: View {
         }
     }
 
+    /// Shared by both scanners: QR and NFC resolve to the same target.
+    private func selectScanned(_ target: AppLink.Target) {
+        let locationId = target.entityId
+        if viewModel.locations.contains(where: { $0.id == locationId }) {
+            selectMove(toLocationId: locationId)
+        } else {
+            unknownScan = true
+        }
+    }
+
     private func selectMove(toLocationId locationId: String?) {
         // Unassigned or non-shared item → move straight away.
         let liveItem = viewModel.items.first(where: { $0.id == item.id }) ?? item
@@ -706,12 +716,21 @@ struct MoveItemSheet: View {
     private var content: some View {
         NavigationStack {
             List {
-                if QRScannerView.isSupported {
+                if QRScannerView.isSupported || CoreNFCService.readingAvailable {
                     Section {
-                        Button {
-                            showingScanner = true
-                        } label: {
-                            Label("Scan location QR", systemImage: "qrcode.viewfinder")
+                        if QRScannerView.isSupported {
+                            Button {
+                                showingScanner = true
+                            } label: {
+                                Label("Scan location QR", systemImage: "qrcode.viewfinder")
+                            }
+                        }
+
+                        NFCScanButton(accepts: .location) { target in
+                            selectScanned(target)
+                        } label: { scanning in
+                            Label(scanning ? "Hold near tag…" : "Scan location NFC tag",
+                                  systemImage: "wave.3.right")
                         }
                     }
                 }
@@ -748,18 +767,13 @@ struct MoveItemSheet: View {
             }
             .sheet(isPresented: $showingScanner) {
                 QRScannerSheet(accepts: .location) { target in
-                    let locationId = target.entityId
-                    if viewModel.locations.contains(where: { $0.id == locationId }) {
-                        selectMove(toLocationId: locationId)
-                    } else {
-                        unknownScan = true
-                    }
+                    selectScanned(target)
                 }
             }
             .alert("Location not found", isPresented: $unknownScan) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("That QR points to a location that no longer exists.")
+                Text("That code points to a location that no longer exists.")
             }
             .confirmationDialog(
                 pendingMove.map { "\"\(item.name)\" is shared, but \($0.location.name) isn't." } ?? "",

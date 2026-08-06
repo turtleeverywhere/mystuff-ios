@@ -564,6 +564,22 @@ struct ItemFormSheet: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Scan location QR code")
                         }
+
+                        NFCScanButton(accepts: .location) { target in
+                            selectScannedLocation(target)
+                        } label: { scanning in
+                            Group {
+                                if scanning {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "wave.3.right")
+                                        .font(.title3)
+                                }
+                            }
+                            .frame(width: 24)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Scan location NFC tag")
                     }
                 }
 
@@ -669,18 +685,13 @@ struct ItemFormSheet: View {
             }
             .sheet(isPresented: $showLocationScanner) {
                 QRScannerSheet(accepts: .location) { target in
-                    let locationId = target.entityId
-                    if viewModel.locations.contains(where: { $0.id == locationId }) {
-                        selectedLocationId = locationId
-                    } else {
-                        unknownLocationScan = true
-                    }
+                    selectScannedLocation(target)
                 }
             }
             .alert("Location not found", isPresented: $unknownLocationScan) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("That QR points to a location that no longer exists.")
+                Text("That code points to a location that no longer exists.")
             }
             .sheet(isPresented: $showCodes) {
                 CodesSheet(
@@ -717,6 +728,16 @@ struct ItemFormSheet: View {
                     self.selectedPhoto = nil
                 }
             }
+        }
+    }
+
+    /// Shared by both scanners: QR and NFC resolve to the same target.
+    private func selectScannedLocation(_ target: AppLink.Target) {
+        let locationId = target.entityId
+        if viewModel.locations.contains(where: { $0.id == locationId }) {
+            selectedLocationId = locationId
+        } else {
+            unknownLocationScan = true
         }
     }
 

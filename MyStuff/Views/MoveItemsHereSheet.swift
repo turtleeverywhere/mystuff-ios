@@ -12,6 +12,9 @@ struct MoveItemsHereSheet: View {
     @State private var selected: Set<String> = []
     @State private var grouping: StuffViewModel.GroupingMode = .location
     @State private var searchText = ""
+    @State private var showingScanner = false
+    /// Non-nil while a scan couldn't be turned into a selection.
+    @State private var scanIssue: String?
 
     /// All items except those already directly in the destination, filtered by search.
     private var candidates: [Item] {
@@ -55,6 +58,25 @@ struct MoveItemsHereSheet: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
 
+                        if QRScannerView.isSupported || CoreNFCService.readingAvailable {
+                            Section {
+                                if QRScannerView.isSupported {
+                                    Button {
+                                        showingScanner = true
+                                    } label: {
+                                        Label("Scan item QR", systemImage: "qrcode.viewfinder")
+                                    }
+                                }
+
+                                NFCScanButton(accepts: .item) { target in
+                                    selectScanned(target)
+                                } label: { scanning in
+                                    Label(scanning ? "Hold near tag…" : "Scan item NFC tag",
+                                          systemImage: "wave.3.right")
+                                }
+                            }
+                        }
+
                         switch grouping {
                         case .location: locationSections
                         case .category: categorySections
@@ -74,7 +96,36 @@ struct MoveItemsHereSheet: View {
                         .disabled(selected.isEmpty)
                 }
             }
+            .sheet(isPresented: $showingScanner) {
+                QRScannerSheet(accepts: .item) { target in
+                    selectScanned(target)
+                }
+            }
+            .alert("Can't add that item", isPresented: Binding(
+                get: { scanIssue != nil },
+                set: { if !$0 { scanIssue = nil } }
+            )) {
+                Button("OK", role: .cancel) { scanIssue = nil }
+            } message: {
+                Text(scanIssue ?? "")
+            }
         }
+    }
+
+    /// Shared by both scanners: adds the scanned item to the selection.
+    private func selectScanned(_ target: AppLink.Target) {
+        let itemId = target.entityId
+        guard let item = viewModel.items.first(where: { $0.id == itemId }) else {
+            scanIssue = "That code points to an item that no longer exists."
+            return
+        }
+        guard item.locationId != destination.id else {
+            scanIssue = "\(item.name) is already in \(destination.name)."
+            return
+        }
+        selected.insert(itemId)
+        // Same reset as tapping a row — a scan is a pick.
+        searchText = ""
     }
 
     // MARK: - Grouped sections
@@ -123,6 +174,9 @@ struct MoveItemsHereSheet: View {
                 selected.remove(item.id)
             } else {
                 selected.insert(item.id)
+                // Reset the query after a pick so the next search starts fresh —
+                // picking several items usually means several separate searches.
+                searchText = ""
             }
         } label: {
             HStack {

@@ -103,12 +103,7 @@ struct ItemDetailSheet: View {
         }
         .sheet(isPresented: $showMoveScanner) {
             QRScannerSheet(accepts: .location) { target in
-                let locationId = target.entityId
-                if viewModel.locations.contains(where: { $0.id == locationId }) {
-                    performMove(toLocationId: locationId)
-                } else {
-                    unknownScan = true
-                }
+                moveToScanned(target)
             }
         }
         .sheet(isPresented: $showLocationSearch) {
@@ -119,7 +114,7 @@ struct ItemDetailSheet: View {
         .alert("Location not found", isPresented: $unknownScan) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("That QR points to a location that no longer exists.")
+            Text("That code points to a location that no longer exists.")
         }
         .confirmationDialog(
             pendingMove.map { "\"\(item.name)\" is shared, but \($0.location.name) isn't." } ?? "",
@@ -334,6 +329,26 @@ struct ItemDetailSheet: View {
                     moveRow(icon: "qrcode.viewfinder", text: "Scan Location QR", trailingIcon: nil)
                 }
             }
+
+            NFCScanButton(accepts: .location) { target in
+                moveToScanned(target)
+            } label: { scanning in
+                moveRow(
+                    icon: "wave.3.right",
+                    text: scanning ? "Hold near tag…" : "Scan Location NFC Tag",
+                    trailingIcon: nil
+                )
+            }
+        }
+    }
+
+    /// Shared by both scanners: QR and NFC resolve to the same target.
+    private func moveToScanned(_ target: AppLink.Target) {
+        let locationId = target.entityId
+        if viewModel.locations.contains(where: { $0.id == locationId }) {
+            performMove(toLocationId: locationId)
+        } else {
+            unknownScan = true
         }
     }
 
