@@ -41,6 +41,41 @@ struct LocationDetailView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Items homed here but currently somewhere else.
+    private var missingItems: [Item] {
+        viewModel.missingItems(for: live)
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func currentPlace(of item: Item) -> String {
+        guard let location = viewModel.location(for: item) else { return "Unassigned" }
+        return viewModel.displayPath(for: location)
+    }
+
+    /// Bulk-returns everything homed here. Mirrors `MoveItemsHereSheet.confirmMove`:
+    /// collaborators on the moved items are added to the destination first, or they
+    /// would lose sight of items that just moved into a location they can't see.
+    private func putAllBackHere() {
+        let dest = live
+        let targets = missingItems
+        Task {
+            if viewModel.canManageSharing(of: dest) {
+                var missingMembers: [String] = []
+                for item in targets where viewModel.canManageSharing(of: item) {
+                    missingMembers.append(contentsOf: viewModel.membersMissing(
+                        from: dest,
+                        forItemMembers: viewModel.sharedMembers(of: item)
+                    ))
+                }
+                let union = Array(Set(missingMembers))
+                if !union.isEmpty {
+                    await viewModel.addMembers(union, toLocation: dest)
+                }
+            }
+            await viewModel.moveItems(targets, toLocationId: dest.id)
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -94,6 +129,39 @@ struct LocationDetailView: View {
                     showingMoveItemsHere = true
                 } label: {
                     Label("Move items here", systemImage: "tray.and.arrow.down")
+                }
+            }
+
+            if !missingItems.isEmpty {
+                Section {
+                    ForEach(missingItems) { item in
+                        Button {
+                            Task { await viewModel.putBackItems([item]) }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name)
+                                        .foregroundStyle(.primary)
+                                    Text(currentPlace(of: item))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.uturn.left.circle")
+                                    .foregroundStyle(.tint)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    HStack {
+                        Text("Missing from here")
+                        Spacer()
+                        Button("Put all back here", action: putAllBackHere)
+                            .font(.caption)
+                            .textCase(nil)
+                    }
                 }
             }
 
