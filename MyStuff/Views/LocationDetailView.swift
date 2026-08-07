@@ -41,6 +41,22 @@ struct LocationDetailView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Items stored in sublocations, grouped by the sublocation holding them.
+    /// Mirrors the Home screen's location cards: root items first, then each sublocation.
+    private var descendantGroups: [(sublocation: Location, items: [Item])] {
+        viewModel.flattenedDescendantItems(for: live).map { entry in
+            (entry.sublocation,
+             entry.items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
+        }
+    }
+
+    /// Path of a sublocation relative to this location, e.g. "Shelf > Box".
+    private func relativePath(of sublocation: Location) -> String {
+        let path = viewModel.locationPath(for: sublocation)
+        guard let idx = path.firstIndex(where: { $0.id == live.id }) else { return sublocation.name }
+        return path.suffix(from: path.index(after: idx)).map(\.name).joined(separator: " > ")
+    }
+
     /// Items homed here but currently somewhere else.
     private var missingItems: [Item] {
         viewModel.missingItems(for: live)
@@ -53,123 +69,23 @@ struct LocationDetailView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 12) {
-                    Text(live.emoji ?? "📍").font(.largeTitle)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(live.name).font(.title2.weight(.semibold))
-                        Text("\(viewModel.recursiveItemCount(for: live)) items")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if viewModel.isSharedWithMe(live) {
-                            SharedBadge(ownerName: viewModel.friend(forUid: live.ownerId ?? "")?.displayName)
-                        } else if viewModel.isShared(live) {
-                            SharedBadge()
-                        }
-                    }
-                    Spacer()
+        // Cards in a ScrollView, not a List: a LazyVGrid of tiles inside a list
+        // row gets its context menu hoisted to the cell, so every long press
+        // fired the first tile's menu. Also matches the Home screen's layout.
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                headerCard
+                if !children.isEmpty {
+                    sublocationsCard
                 }
-                .padding(.vertical, 4)
+                codesCard
+                actionsCard
+                if !missingItems.isEmpty {
+                    missingCard
+                }
+                itemsCard
             }
-
-            if !children.isEmpty {
-                Section("Sub-locations") {
-                    ForEach(children) { child in
-                        NavigationLink {
-                            LocationDetailView(location: child, viewModel: viewModel)
-                        } label: {
-                            Label { Text(child.name) } icon: { Text(child.emoji ?? "📍") }
-                        }
-                    }
-                }
-            }
-
-            Section {
-                Button {
-                    showCodes = true
-                } label: {
-                    CodesRow(tags: live.pairedTags)
-                }
-                .tint(.primary)
-            }
-
-            // Add actions live in their own section, separated from the item list.
-            Section {
-                Button {
-                    showingAddItem = true
-                } label: {
-                    Label("Add item here", systemImage: "plus.circle")
-                }
-
-                Button {
-                    showingMoveItemsHere = true
-                } label: {
-                    Label("Move items here", systemImage: "tray.and.arrow.down")
-                }
-            }
-
-            if !missingItems.isEmpty {
-                Section {
-                    ForEach(missingItems) { item in
-                        Button {
-                            Task { await viewModel.putBackItems([item]) }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name)
-                                        .foregroundStyle(.primary)
-                                    Text(currentPlace(of: item))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "arrow.uturn.left.circle")
-                                    .foregroundStyle(.tint)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    HStack {
-                        Text("Missing from here")
-                        Spacer()
-                        // Every item here is homed at `live`, so putBackItems sends them
-                        // exactly where this button promises — and handles the auto-share.
-                        Button("Put all back here") {
-                            Task { await viewModel.putBackItems(missingItems) }
-                        }
-                        .font(.caption)
-                        .textCase(nil)
-                    }
-                }
-            }
-
-            Section("Items") {
-                if directItems.isEmpty {
-                    Text("No items here yet.").foregroundStyle(.secondary)
-                } else if isGallery {
-                    ItemGalleryGrid(
-                        items: directItems,
-                        isMisplaced: { viewModel.isMisplaced($0) },
-                        kind: .location,
-                        columns: horizontalSizeClass == .regular ? galleryColumns : 2,
-                        onTap: { detailItem = $0 },
-                        onAddPhoto: { item in
-                            photoSourceItem = item
-                            showPhotoSource = true
-                        },
-                        onDoubleTap: { previewItem = $0 },
-                        tileMenu: { item in itemMenuItems(item) }
-                    )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color.clear)
-                } else {
-                    ForEach(directItems) { item in
-                        itemRow(item)
-                    }
-                }
-            }
+            .padding()
         }
         .navigationTitle(live.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -294,6 +210,201 @@ struct LocationDetailView: View {
         .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
+    // MARK: - Cards
+
+    /// Shared card chrome, matching the Home screen's location cards.
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func cardTitle(_ text: String) -> some View {
+        Text(text)
+            .font(.headline)
+    }
+
+    private var headerCard: some View {
+        card {
+            HStack(spacing: 12) {
+                Text(live.emoji ?? "📍").font(.largeTitle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(live.name).font(.title2.weight(.semibold))
+                    Text("\(viewModel.recursiveItemCount(for: live)) items")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if viewModel.isSharedWithMe(live) {
+                        SharedBadge(ownerName: viewModel.friend(forUid: live.ownerId ?? "")?.displayName)
+                    } else if viewModel.isShared(live) {
+                        SharedBadge()
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private var sublocationsCard: some View {
+        card {
+            cardTitle("Sub-locations")
+            ForEach(children) { child in
+                NavigationLink {
+                    LocationDetailView(location: child, viewModel: viewModel)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(child.emoji ?? "📍")
+                        Text(child.name)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text("\(viewModel.recursiveItemCount(for: child))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var codesCard: some View {
+        card {
+            Button {
+                showCodes = true
+            } label: {
+                CodesRow(tags: live.pairedTags)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var actionsCard: some View {
+        card {
+            Button {
+                showingAddItem = true
+            } label: {
+                Label("Add item here", systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+
+            Divider().opacity(0.5)
+
+            Button {
+                showingMoveItemsHere = true
+            } label: {
+                Label("Move items here", systemImage: "tray.and.arrow.down")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+        }
+    }
+
+    private var missingCard: some View {
+        card {
+            HStack {
+                cardTitle("Missing from here")
+                Spacer()
+                // Every item here is homed at `live`, so putBackItems sends them
+                // exactly where this button promises — and handles the auto-share.
+                Button("Put all back here") {
+                    Task { await viewModel.putBackItems(missingItems) }
+                }
+                .font(.caption)
+            }
+
+            ForEach(missingItems) { item in
+                Button {
+                    Task { await viewModel.putBackItems([item]) }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name)
+                                .foregroundStyle(.primary)
+                            Text(currentPlace(of: item))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.uturn.left.circle")
+                            .foregroundStyle(.tint)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Items stored here, then one group per sublocation — same shape as a Home card.
+    private var itemsCard: some View {
+        card {
+            cardTitle("Items")
+
+            if directItems.isEmpty && descendantGroups.isEmpty {
+                Text("No items here yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            } else if directItems.isEmpty {
+                Text("No items directly here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            } else {
+                itemsContent(directItems)
+            }
+
+            ForEach(descendantGroups, id: \.sublocation.id) { group in
+                sublocationHeader(group.sublocation)
+                itemsContent(group.items)
+            }
+        }
+    }
+
+    private func sublocationHeader(_ sublocation: Location) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .opacity(0.5)
+            HStack(spacing: 6) {
+                Text(sublocation.emoji ?? "📍")
+                    .font(.subheadline)
+                Text(relativePath(of: sublocation))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    /// Renders a group of items in whichever mode is active.
+    @ViewBuilder
+    private func itemsContent(_ items: [Item]) -> some View {
+        if isGallery {
+            ItemGalleryGrid(
+                items: items,
+                isMisplaced: { viewModel.isMisplaced($0) },
+                kind: .location,
+                columns: horizontalSizeClass == .regular ? galleryColumns : 2,
+                onTap: { detailItem = $0 },
+                onAddPhoto: { item in
+                    photoSourceItem = item
+                    showPhotoSource = true
+                },
+                onDoubleTap: { previewItem = $0 },
+                tileMenu: { item in itemMenuItems(item) }
+            )
+        } else {
+            ForEach(items) { item in
+                itemRow(item)
+            }
+        }
+    }
+
     private func itemRow(_ item: Item) -> some View {
         itemRowBody(item)
             .itemTapGestures(
@@ -311,8 +422,12 @@ struct LocationDetailView: View {
             if viewModel.isMisplaced(item) {
                 MisplacedBadge(iconOnly: true)
             }
+            if !item.pairedTags.isEmpty {
+                NFCBadge(iconOnly: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityAddTraits(.isButton)
         .contextMenu { itemMenuItems(item) }
