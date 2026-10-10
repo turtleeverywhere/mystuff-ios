@@ -5,6 +5,8 @@ import UIKit
 
 /// VisionKit live QR scanner. Reports the first decoded barcode string via `onScan`.
 struct QRScannerView: UIViewControllerRepresentable {
+    /// Set by screens that also need stills from the same camera (item scan).
+    var controller: ScanCameraController? = nil
     let onScan: (String) -> Void
 
     static var isSupported: Bool {
@@ -18,6 +20,7 @@ struct QRScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
+        controller?.scanner = scanner
         return scanner
     }
 
