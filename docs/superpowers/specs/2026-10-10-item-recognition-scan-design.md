@@ -1,7 +1,7 @@
 # Item Recognition Scan
 
 Date: 2026-10-10
-Status: Design approved; spec awaiting review
+Status: Approved
 
 ## Problem
 
@@ -62,13 +62,14 @@ recognition, reporting items that were expected at the location but not scanned.
 protocol ImageEmbedder: Sendable {
     /// Identifies model + revision. Vectors are only comparable within one modelID.
     var modelID: String { get }
-    func embed(_ image: CGImage, orientation: CGImagePropertyOrientation) async throws -> Embedding
+    /// `imageData` is an encoded image; EXIF orientation is honoured.
+    func embed(imageData: Data) async throws -> Embedding
 }
 
 struct Embedding: Sendable {
     let vector: [Float]
-    /// The crop actually embedded, for thumbnails.
-    let crop: CGImage
+    /// JPEG of the crop actually embedded, at most 320 px.
+    let thumbnail: Data
 }
 ```
 
@@ -96,8 +97,8 @@ struct ItemReference: Codable, Identifiable, Sendable {
     var itemId: String
     var source: Source
     var modelID: String
-    /// Raw Float32 bytes.
-    var vector: Data
+    /// Raw Float32 bytes on disk.
+    var vector: [Float]
     /// itemPhoto only: `remoteItemPhotoURL ?? itemPhotoURL` at embed time, to detect a changed photo.
     var sourceKey: String?
     var createdAt: Date
@@ -105,8 +106,8 @@ struct ItemReference: Codable, Identifiable, Sendable {
 ```
 
 On disk under `Application Support/Recognition/<uid>/`: one binary plist per reference
-(`<refId>.plist`) and one 320 px JPEG thumbnail (`<refId>.jpg`). Loaded lazily on first
-use. Scoped by uid so switching accounts neither mixes nor deletes references. The
+(`<refId>.plist`) and one 320 px JPEG thumbnail (`<refId>.jpg`). Loaded when the store
+is first used. Scoped by uid so switching accounts neither mixes nor deletes references. The
 directory stays in device backups — enrolled and learned references are not
 rebuildable.
 
@@ -152,7 +153,7 @@ struct ItemMatch: Sendable, Equatable { let itemId: String; let distance: Float 
 enum MatchOutcome: Sendable, Equatable {
     case confident(ItemMatch, alternatives: [ItemMatch])
     case ambiguous([ItemMatch])   // best first, max 3
-    case none([ItemMatch])        // nearest guesses still offered, max 3
+    case noMatch([ItemMatch])     // nearest guesses still offered, max 3
 }
 
 enum ItemMatcher {
@@ -171,7 +172,7 @@ enum ItemMatcher {
   or another `modelID` are skipped.
 - `confident`: best ≤ `acceptDistance` **and** runner-up item is at least `acceptMargin`
   farther (or there is no runner-up).
-- `none`: best > `rejectDistance`, or no references at all.
+- `noMatch`: best > `rejectDistance`, or no references at all.
 - Otherwise `ambiguous`.
 
 The three constants are starting estimates, not measured values. They live in one
@@ -220,12 +221,12 @@ Operations: `capture(_ image: UIImage)`, `resolve(_ captureId:to:origin:)`,
 - **Destination bar** (top, glass). Shows the destination's emoji + name, or "Choose
   location". Tapping opens a sheet with `LocationTreeSections` and an `NFCScanButton`.
   A location QR seen by the viewfinder sets the destination directly.
-- **Viewfinder** — `ScanCameraView`, a `DataScannerViewController` wrapper that
-  recognizes QR codes and exposes `capturePhoto()`. A reticle marks where to hold the
-  item.
+- **Viewfinder** — `ScanCaptureStage`: the existing `QRScannerView`
+  (`DataScannerViewController`) extended with a `ScanCameraController` that exposes
+  `capturePhoto()`, plus reticle and shutter.
 - **Shutter** → `capture`. Outcome:
   - `confident` → capture resolved to the match, added to the tray, success haptic.
-  - `ambiguous` / `none` → `ScanMatchCard` slides up.
+  - `ambiguous` / `noMatch` → `ScanMatchCard` slides up.
 - **`ScanMatchCard`** — captured thumbnail; up to three candidate rows (thumbnail,
   name, current location); "Other…" (searchable list of all items); "New item";
   "Discard". DEBUG builds also show each candidate's distance.
@@ -278,7 +279,7 @@ created.
 - Horizontal strip of the item's reference thumbnails. `enrolled` and `learned`
   references can be deleted from a context menu; the `itemPhoto` reference follows the
   item photo and has no delete.
-- "Add angles" opens `ScanCameraView` in multi-shot mode: each shutter tap embeds and
+- "Add angles" opens `ScanCaptureStage` in multi-shot mode: each shutter tap embeds and
   stores an `enrolled` reference, with an `n/5` counter and Done.
 - Empty state explains that scanning learns the item automatically.
 
@@ -301,7 +302,9 @@ New:
 - `MyStuff/Services/ItemMatcher.swift`
 - `MyStuff/ViewModels/ScanSessionModel.swift`
 - `MyStuff/Views/Scan/ItemScanView.swift`
-- `MyStuff/Views/Scan/ScanCameraView.swift`
+- `MyStuff/Views/Scan/ScanCaptureStage.swift`
+- `MyStuff/Services/ItemPhotoLoader.swift`
+- `MyStuff/Models/ItemReference.swift`
 - `MyStuff/Views/Scan/ScanMatchCard.swift`
 - `MyStuff/Views/Scan/ScanReviewSheet.swift`
 - `MyStuff/Views/Scan/RecognitionPhotosSection.swift`
@@ -309,7 +312,9 @@ New:
 
 Changed:
 
-- `StuffViewModel.swift` — `moveItemsSharingDestination`, reference hooks.
+- `StuffViewModel.swift` — `moveItemsSharingDestination`, `moveItems` returns `Bool`,
+  reference hooks.
+- `QRScannerView.swift` — optional `ScanCameraController`.
 - `MoveItemsHereSheet.swift` — call the extracted helper.
 - `LocationDetailView.swift`, `NFCTabView.swift`, `HomeView.swift` — entry points.
 - `ItemDetailSheet.swift` — recognition photos section.
