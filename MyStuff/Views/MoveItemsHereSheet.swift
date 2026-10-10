@@ -195,24 +195,9 @@ struct MoveItemsHereSheet: View {
     // MARK: - Confirm
 
     private func confirmMove() {
-        let dest = viewModel.locations.first { $0.id == destination.id } ?? destination
         let selectedItems = viewModel.items.filter { selected.contains($0.id) }
         Task {
-            // Auto-share the destination with moved items' collaborators (owner-managed only).
-            if viewModel.canManageSharing(of: dest) {
-                var missing: [String] = []
-                for item in selectedItems where viewModel.canManageSharing(of: item) {
-                    missing.append(contentsOf: viewModel.membersMissing(
-                        from: dest,
-                        forItemMembers: viewModel.sharedMembers(of: item)
-                    ))
-                }
-                let union = Array(Set(missing))
-                if !union.isEmpty {
-                    await viewModel.addMembers(union, toLocation: dest)
-                }
-            }
-            await viewModel.moveItems(selectedItems, toLocationId: dest.id)
+            await viewModel.moveItemsSharingDestination(selectedItems, to: destination)
             dismiss()
         }
     }

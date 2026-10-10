@@ -33,6 +33,14 @@ final class StuffViewModel {
     // private let storageService: StorageService = MockStorageService()
     private let storageService: StorageService = FirebaseStorageService()
 
+    /// On-device recognition references for the signed-in user. Lazy: the uid is
+    /// only known once `service` exists, and most launches never open the scanner.
+    @ObservationIgnored
+    private(set) lazy var recognition = RecognitionStore(
+        directory: RecognitionStore.directory(forUid: service.currentUserId),
+        embedder: VisionFeaturePrintEmbedder()
+    )
+
     // MARK: - Computed
 
     var filteredItems: [Item] {
@@ -432,6 +440,7 @@ final class StuffViewModel {
         items.removeAll { $0.id == item.id }
         uploadManager.removeLocal(itemId: item.id, filename: "photo")
         uploadManager.removeLocal(itemId: item.id, filename: "item_photo")
+        recognition.removeAll(itemId: item.id)
         HapticManager.impact()
 
         do {
@@ -521,6 +530,11 @@ final class StuffViewModel {
         }
 
         uploadManager.enqueueUpload(itemId: item.id, filename: filename, oldRemoteURL: oldRemote)
+
+        // Only the item photo feeds recognition; the location photo shows the place, not the thing.
+        if filename == "item_photo" {
+            await recognition.refreshItemPhoto(for: updated, imageData: pair.full)
+        }
     }
 
     func deletePhoto(for item: Item) async {
@@ -537,6 +551,9 @@ final class StuffViewModel {
         guard hadLocal || oldRemote != nil else { return }
 
         uploadManager.removeLocal(itemId: item.id, filename: filename)
+        if filename == "item_photo" {
+            recognition.removeItemPhotoReference(itemId: item.id)
+        }
 
         var updated = item
         if filename == "photo" {
@@ -700,8 +717,10 @@ final class StuffViewModel {
 
     /// Move several items to the same location in one pass. Unlike calling `moveItem`
     /// per item, this fires a single success haptic for the whole batch.
-    func moveItems(_ items: [Item], toLocationId: String?) async {
-        guard !items.isEmpty else { return }
+    /// Returns false when a write failed (`errorMessage` is set).
+    @discardableResult
+    func moveItems(_ items: [Item], toLocationId: String?) async -> Bool {
+        guard !items.isEmpty else { return true }
         let ids = Set(items.map(\.id))
         do {
             for id in ids {
@@ -715,9 +734,29 @@ final class StuffViewModel {
                 }
             }
             HapticManager.success()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
+    }
+
+    /// Bulk move that first shares `destination` with the moved items' collaborators
+    /// (owner-managed only), so a shared item never lands somewhere its members can't see.
+    @discardableResult
+    func moveItemsSharingDestination(_ items: [Item], to destination: Location) async -> Bool {
+        let dest = locations.first { $0.id == destination.id } ?? destination
+        if canManageSharing(of: dest) {
+            var missing: [String] = []
+            for item in items where canManageSharing(of: item) {
+                missing.append(contentsOf: membersMissing(from: dest, forItemMembers: sharedMembers(of: item)))
+            }
+            let union = Array(Set(missing))
+            if !union.isEmpty {
+                await addMembers(union, toLocation: dest)
+            }
+        }
+        return await moveItems(items, toLocationId: dest.id)
     }
 
     // MARK: - Misplaced Items
