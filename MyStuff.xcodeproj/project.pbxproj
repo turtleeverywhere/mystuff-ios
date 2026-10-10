@@ -15,8 +15,19 @@
 		AA000089 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = AA000088 /* FirebaseStorage */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		BB000091 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA000010;
+			remoteInfo = MyStuff;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		AA000001 /* MyStuff.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyStuff.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB000001 /* MyStuffTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyStuffTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -38,6 +49,11 @@
 			path = MyStuff;
 			sourceTree = "<group>";
 		};
+		BB000003 /* MyStuffTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyStuffTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +67,13 @@
 				46641B7D2F7D4F1D008C88BB /* FirebaseAuth in Frameworks */,
 				46641B7C2F7D4F1D008C88BB /* FirebaseFirestore in Frameworks */,
 				AA000089 /* FirebaseStorage in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +92,7 @@
 			children = (
 				AA000003 /* MyStuff */,
 				466CA64D3007811700AC0825 /* Frameworks */,
+				BB000003 /* MyStuffTests */,
 				AA000031 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -77,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000001 /* MyStuff.app */,
+				BB000001 /* MyStuffTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -112,6 +137,29 @@
 			productReference = AA000001 /* MyStuff.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB000010 /* MyStuffTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB000060 /* Build configuration list for PBXNativeTarget "MyStuffTests" */;
+			buildPhases = (
+				BB000040 /* Sources */,
+				BB000020 /* Frameworks */,
+				BB000050 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB000092 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				BB000003 /* MyStuffTests */,
+			);
+			name = MyStuffTests;
+			packageProductDependencies = (
+			);
+			productName = MyStuffTests;
+			productReference = BB000001 /* MyStuffTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -124,6 +172,10 @@
 				TargetAttributes = {
 					AA000010 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					BB000010 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = AA000010;
 					};
 				};
 			};
@@ -146,12 +198,20 @@
 			projectRoot = "";
 			targets = (
 				AA000010 /* MyStuff */,
+				BB000010 /* MyStuffTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA000050 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB000050 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -168,7 +228,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB000040 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BB000092 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA000010 /* MyStuff */;
+			targetProxy = BB000091 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA000061 /* Debug */ = {
@@ -362,6 +437,46 @@
 			};
 			name = Release;
 		};
+		BB000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WDJPX25GFC;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flyingturtle.mystuff.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyStuff.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MyStuff";
+			};
+			name = Debug;
+		};
+		BB000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WDJPX25GFC;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flyingturtle.mystuff.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyStuff.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MyStuff";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -379,6 +494,15 @@
 			buildConfigurations = (
 				AA000071 /* Debug */,
 				AA000072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB000060 /* Build configuration list for PBXNativeTarget "MyStuffTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB000061 /* Debug */,
+				BB000062 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
