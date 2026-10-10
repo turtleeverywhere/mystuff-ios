@@ -107,7 +107,7 @@ struct ItemDetailSheet: View {
             }
         }
         .sheet(isPresented: $showLocationSearch) {
-            LocationSearchSheet(viewModel: viewModel) { locationId in
+            LocationSearchSheet(viewModel: viewModel, selectedId: liveItem.locationId) { locationId in
                 performMove(toLocationId: locationId)
             }
         }
@@ -448,80 +448,6 @@ struct LocationMoveMenuItem: View {
                     Text(location.name)
                 } icon: {
                     Text(location.emoji ?? "📍")
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Location Search Sheet
-
-/// Searchable location picker. Browsing shows the indented tree;
-/// typing filters to matches with their full path for context.
-struct LocationSearchSheet: View {
-    let viewModel: StuffViewModel
-    let onSelect: (String?) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var results: [(location: Location, depth: Int)] {
-        let tree = viewModel.flattenedLocationTree()
-        guard !searchText.isEmpty else { return tree }
-        return tree.filter { $0.location.name.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if searchText.isEmpty {
-                    Button {
-                        onSelect(nil)
-                        dismiss()
-                    } label: {
-                        Label("Unassigned", systemImage: "questionmark.circle")
-                    }
-                    .tint(.primary)
-                }
-
-                ForEach(results, id: \.location.id) { entry in
-                    Button {
-                        onSelect(entry.location.id)
-                        dismiss()
-                    } label: {
-                        Label {
-                            if searchText.isEmpty {
-                                Text(entry.location.name)
-                            } else {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.location.name)
-                                    Text(viewModel.displayPath(for: entry.location))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        } icon: {
-                            Text(entry.location.emoji ?? "📍")
-                        }
-                    }
-                    .tint(.primary)
-                    .padding(.leading, searchText.isEmpty ? CGFloat(entry.depth) * 20 : 0)
-                }
-            }
-            .overlay {
-                if !searchText.isEmpty && results.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                }
-            }
-            .searchable(
-                text: $searchText,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search locations"
-            )
-            .navigationTitle("Move to Location")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
                 }
             }
         }

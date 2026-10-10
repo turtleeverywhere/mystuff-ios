@@ -18,11 +18,14 @@ protocol SocialService: Sendable {
     func fetchOutgoingRequests() async throws -> [FriendRequest]
     /// Set status to accepted/declined and stamp respondedAt.
     func respondToRequest(_ request: FriendRequest, accept: Bool) async throws
+    /// Delete every request between me and `uid`, in either direction.
+    /// Required on unfriend: a surviving accepted request re-creates the friendship.
+    func deleteRequests(with uid: String) async throws
 
     func fetchFriends() async throws -> [Friend]
     /// Write a friend subdoc under MY uid (`users/{me}/friends/{friend.uid}`).
     func addFriend(_ friend: Friend) async throws
-    /// Delete my friend subdoc for `uid`.
+    /// Two-sided unfriend: deletes `users/{me}/friends/{uid}` AND `users/{uid}/friends/{me}`.
     func removeFriend(uid: String) async throws
 
     // MARK: - Live streams

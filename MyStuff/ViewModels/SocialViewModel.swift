@@ -182,8 +182,13 @@ final class SocialViewModel {
     func removeFriend(_ friend: Friend) async {
         do {
             await onUnfriend?(friend.uid)
+            // Requests first: a surviving accepted request makes reconcileAcceptedOutgoing
+            // re-create the friend subdoc. Failing here leaves the friendship intact and retryable.
+            try await service.deleteRequests(with: friend.uid)
             try await service.removeFriend(uid: friend.uid)
             friends.removeAll { $0.uid == friend.uid }
+            outgoingRequests.removeAll { $0.toUid == friend.uid }
+            incomingRequests.removeAll { $0.fromUid == friend.uid }
             HapticManager.impact()
         } catch {
             errorMessage = error.localizedDescription

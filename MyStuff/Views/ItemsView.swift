@@ -625,49 +625,43 @@ struct ItemFormSheet: View {
                 }
 
                 Section("Location") {
-                    HStack {
-                        Picker("Location", selection: $selectedLocationId) {
-                            Text("Unassigned").tag(unassignedSentinel)
-                            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                                Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
-                                    .tag(entry.location.id)
-                            }
-                        }
-                        if QRScannerView.isSupported {
-                            Button {
-                                showLocationScanner = true
-                            } label: {
-                                Image(systemName: "qrcode.viewfinder")
-                                    .font(.title3)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Scan location QR code")
-                        }
+                    LocationPickerRow(
+                        viewModel: viewModel,
+                        label: "Location",
+                        pickerTitle: "Choose Location",
+                        selection: Binding(
+                            get: { selectedLocationId == unassignedSentinel ? nil : selectedLocationId },
+                            set: { selectedLocationId = $0 ?? unassignedSentinel }
+                        )
+                    )
 
-                        NFCScanButton(accepts: .location) { target in
-                            selectScannedLocation(target)
-                        } label: { scanning in
-                            Group {
-                                if scanning {
-                                    ProgressView()
-                                } else {
-                                    Image(systemName: "wave.3.right")
-                                        .font(.title3)
-                                }
-                            }
-                            .frame(width: 24)
+                    if QRScannerView.isSupported {
+                        Button {
+                            showLocationScanner = true
+                        } label: {
+                            Label("Scan Location QR", systemImage: "qrcode.viewfinder")
                         }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Scan location NFC tag")
                     }
 
-                    Picker("Supposed location", selection: $selectedHomeLocationId) {
-                        Text("None").tag(noHomeSentinel)
-                        ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
-                                .tag(entry.location.id)
-                        }
+                    NFCScanButton(accepts: .location) { target in
+                        selectScannedLocation(target)
+                    } label: { scanning in
+                        Label(
+                            scanning ? "Hold near tag…" : "Scan Location NFC Tag",
+                            systemImage: "wave.3.right"
+                        )
                     }
+
+                    LocationPickerRow(
+                        viewModel: viewModel,
+                        label: "Supposed location",
+                        pickerTitle: "Supposed Location",
+                        emptyLabel: "None",
+                        selection: Binding(
+                            get: { selectedHomeLocationId == noHomeSentinel ? nil : selectedHomeLocationId },
+                            set: { selectedHomeLocationId = $0 ?? noHomeSentinel }
+                        )
+                    )
 
                     Button("Same as current location") {
                         selectedHomeLocationId = selectedLocationId

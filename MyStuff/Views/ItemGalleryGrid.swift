@@ -152,19 +152,27 @@ private struct GalleryTile: View {
     }
 
     private var nameOverlay: some View {
-        Text(item.name)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .lineLimit(2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.55)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        VStack(alignment: .leading, spacing: 1) {
+            Text(item.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+            if let changedAt = item.locationChangedAt {
+                Text("Stored \(changedAt, format: .relative(presentation: .named))")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55)],
+                startPoint: .top,
+                endPoint: .bottom
             )
+        )
     }
 
     private var placeholderFill: some View {
@@ -183,7 +191,7 @@ private struct GalleryTile: View {
         ItemGalleryGrid(
             items: [
                 Item(name: "Passport"),
-                Item(name: "Camping tent with a very long name that wraps")
+                Item(name: "Camping tent with a very long name that wraps", locationChangedAt: .now.addingTimeInterval(-86_400 * 3))
             ],
             kind: .item,
             onTap: { _ in },

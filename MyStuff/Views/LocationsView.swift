@@ -10,6 +10,8 @@ struct LocationsView: View {
     @State private var scannedItem: Item?
     @State private var addingSublocationParent: Location?
     @State private var movingLocation: Location?
+    @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
     /// Scanned code resolved to an id we no longer hold — surface it instead of
     /// dismissing the scanner with nothing happening.
     @State private var unknownScan = false
@@ -24,6 +26,11 @@ struct LocationsView: View {
                 }
             }
             .navigationTitle("Locations")
+            .safeAreaInset(edge: .bottom) {
+                if !viewModel.locations.isEmpty {
+                    searchBar
+                }
+            }
             .navigationDestination(for: Location.self) { loc in
                 LocationDetailView(location: loc, viewModel: viewModel)
             }
@@ -35,13 +42,25 @@ struct LocationsView: View {
                         Image(systemName: "plus")
                     }
                 }
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItemGroup(placement: .topBarLeading) {
                     if QRScannerView.isSupported {
                         Button {
                             showingScanner = true
                         } label: {
                             Image(systemName: "qrcode.viewfinder")
                         }
+                    }
+                    NFCScanButton { target in
+                        openScanned(target)
+                    } label: { scanning in
+                        Group {
+                            if scanning {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "wave.3.right")
+                            }
+                        }
+                        .frame(width: 20)
                     }
                 }
             }
@@ -59,20 +78,7 @@ struct LocationsView: View {
             }
             .sheet(isPresented: $showingScanner) {
                 QRScannerSheet { target in
-                    switch target {
-                    case .location(let id):
-                        if let loc = viewModel.locations.first(where: { $0.id == id }) {
-                            path.append(loc)
-                        } else {
-                            unknownScan = true
-                        }
-                    case .item(let id):
-                        if let item = viewModel.items.first(where: { $0.id == id }) {
-                            scannedItem = item
-                        } else {
-                            unknownScan = true
-                        }
-                    }
+                    openScanned(target)
                 }
             }
             .sheet(item: $scannedItem) { item in
@@ -132,6 +138,27 @@ struct LocationsView: View {
         .containerBackground(LinearGradient.appBackground, for: .navigation)
     }
 
+    // MARK: - Scanning
+
+    /// Shared by the QR and NFC buttons: both resolve to the same target kinds,
+    /// so they navigate (locations) or open a quick update (items) identically.
+    private func openScanned(_ target: AppLink.Target) {
+        switch target {
+        case .location(let id):
+            if let loc = viewModel.locations.first(where: { $0.id == id }) {
+                path.append(loc)
+            } else {
+                unknownScan = true
+            }
+        case .item(let id):
+            if let item = viewModel.items.first(where: { $0.id == id }) {
+                scannedItem = item
+            } else {
+                unknownScan = true
+            }
+        }
+    }
+
     // MARK: - Locations List
 
     /// Visible locations based on expanded state. Locations whose parent isn't visible to the
@@ -165,9 +192,26 @@ struct LocationsView: View {
         return result
     }
 
+    /// One `List` for both modes on purpose: swapping the whole content view when
+    /// search text appears tears down the bottom `safeAreaInset` with the text field
+    /// in it, which drops keyboard focus after the first character.
     private var locationsList: some View {
         List {
-            ForEach(visibleEntries, id: \.location.id) { entry in
+            if trimmedSearch.isEmpty {
+                treeRows
+            } else {
+                searchRows
+            }
+        }
+        .overlay {
+            if !trimmedSearch.isEmpty && searchResults.isEmpty {
+                ContentUnavailableView.search(text: trimmedSearch)
+            }
+        }
+    }
+
+    private var treeRows: some View {
+        ForEach(visibleEntries, id: \.location.id) { entry in
                 let hasChildren = !viewModel.childLocations(for: entry.location).isEmpty
                 HStack(spacing: 0) {
                     // Expand/collapse button
@@ -199,30 +243,7 @@ struct LocationsView: View {
                     Button {
                         path.append(entry.location)
                     } label: {
-                        HStack {
-                            Text(entry.location.emoji ?? "📍")
-                                .font(.title2)
-                            Text(entry.location.name)
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                            if viewModel.isSharedWithMe(entry.location) {
-                                SharedBadge(iconOnly: true, ownerName: viewModel.friend(forUid: entry.location.ownerId ?? "")?.displayName)
-                            } else if viewModel.isShared(entry.location) {
-                                SharedBadge(iconOnly: true)
-                            }
-                            if !entry.location.pairedTags.isEmpty {
-                                NFCBadge(iconOnly: true)
-                            }
-                            Spacer()
-                            Text("\(viewModel.recursiveItemCount(for: entry.location)) items")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(.ultraThinMaterial, in: Capsule())
-                        }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                        rowLabel(for: entry.location)
                     }
                     .buttonStyle(.plain)
                 }
@@ -246,8 +267,127 @@ struct LocationsView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+        }
+    }
+
+    /// Row content shared by the tree and the search results. `subtitle` carries the
+    /// ancestor path in search results, where the tree indentation is gone.
+    private func rowLabel(for location: Location, subtitle: String? = nil) -> some View {
+        HStack {
+            Text(location.emoji ?? "📍")
+                .font(.title2)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(location.name)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    if viewModel.isSharedWithMe(location) {
+                        SharedBadge(iconOnly: true, ownerName: viewModel.friend(forUid: location.ownerId ?? "")?.displayName)
+                    } else if viewModel.isShared(location) {
+                        SharedBadge(iconOnly: true)
+                    }
+                    if !location.pairedTags.isEmpty {
+                        NFCBadge(iconOnly: true)
+                    }
+                }
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            }
+            Spacer()
+            Text("\(viewModel.recursiveItemCount(for: location)) items")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Search
+
+    private var trimmedSearch: String {
+        searchText.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Flat, name-matched results — a tree filtered in place would hide matches
+    /// sitting under collapsed parents.
+    private var searchResults: [Location] {
+        let query = trimmedSearch
+        guard !query.isEmpty else { return [] }
+        return viewModel.locations
+            .filter { $0.name.localizedCaseInsensitiveContains(query) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var searchRows: some View {
+        ForEach(searchResults) { location in
+            Button {
+                path.append(location)
+            } label: {
+                rowLabel(for: location, subtitle: ancestorPath(for: location))
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button {
+                    addingSublocationParent = location
+                } label: {
+                    Label("Add Sub-location", systemImage: "plus")
+                }
+                Button {
+                    movingLocation = location
+                } label: {
+                    Label("Move", systemImage: "folder")
+                }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    locationToDelete = location
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
+    }
+
+    /// "Home > Garage" for a location's parents — empty for a root.
+    private func ancestorPath(for location: Location) -> String {
+        viewModel.locationPath(for: location).dropLast().map(\.name).joined(separator: " > ")
+    }
+
+    /// Sits in the bottom safe area, above the tab bar.
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search locations", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Empty State
@@ -321,13 +461,17 @@ struct LocationFormSheet: View {
                 }
 
                 Section("Parent Location") {
-                    Picker("Parent", selection: $selectedParentId) {
-                        Text("None (Root)").tag(Self.noParentSentinel)
-                        ForEach(viewModel.flattenedLocationTree(excluding: location?.id), id: \.location.id) { entry in
-                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
-                                .tag(entry.location.id)
-                        }
-                    }
+                    LocationPickerRow(
+                        viewModel: viewModel,
+                        label: "Parent",
+                        pickerTitle: "Choose Parent",
+                        emptyLabel: "None (Root)",
+                        excluding: location?.id,
+                        selection: Binding(
+                            get: { selectedParentId == Self.noParentSentinel ? nil : selectedParentId },
+                            set: { selectedParentId = $0 ?? Self.noParentSentinel }
+                        )
+                    )
                 }
 
                 Section("Quick Pick") {
@@ -448,27 +592,27 @@ struct MoveLocationSheet: View {
                     Button {
                         select(parentId: nil)
                     } label: {
-                        Label("Root (top level)", systemImage: "house")
-                    }
-                    .tint(location.parentId == nil ? .accentColor : .primary)
-
-                    ForEach(viewModel.flattenedLocationTree(excluding: location.id), id: \.location.id) { entry in
-                        Button {
-                            select(parentId: entry.location.id)
-                        } label: {
-                            Label {
-                                Text(entry.location.name)
-                            } icon: {
-                                Text(entry.location.emoji ?? "📍")
-                            }
+                        HStack(spacing: 10) {
+                            Image(systemName: "house")
+                                .foregroundStyle(.secondary)
+                            Text("Root (top level)")
+                            Spacer()
+                            if location.parentId == nil { LocationPickerCheckmark() }
                         }
-                        .tint(entry.location.id == location.parentId ? .accentColor : .primary)
-                        .padding(.leading, CGFloat(entry.depth) * 20)
                     }
+                    .tint(.primary)
                 } header: {
                     Text("Move \"\(location.name)\" to…")
                 } footer: {
                     Text("Moving into a shared location shares this location and its contents with the same people.")
+                }
+
+                LocationTreeSections(
+                    viewModel: viewModel,
+                    selectedId: location.parentId,
+                    excluding: location.id
+                ) { parentId in
+                    select(parentId: parentId)
                 }
             }
             .navigationTitle("Move Location")

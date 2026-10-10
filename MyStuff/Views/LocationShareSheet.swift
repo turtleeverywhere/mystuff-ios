@@ -32,6 +32,19 @@ struct LocationShareSheet: View {
         }
     }
 
+    /// What the current scope would still add for people this is already shared with.
+    private var pending: (sublocations: Int, items: Int) {
+        viewModel.pendingShareAdditions(of: location, scope: scope)
+    }
+
+    private var pendingSummary: String {
+        let p = pending
+        var parts: [String] = []
+        if p.sublocations > 0 { parts.append("\(p.sublocations) sublocation\(p.sublocations == 1 ? "" : "s")") }
+        if p.items > 0 { parts.append("\(p.items) item\(p.items == 1 ? "" : "s")") }
+        return parts.joined(separator: ", ")
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -61,6 +74,33 @@ struct LocationShareSheet: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                            }
+                        }
+
+                        // The friend toggle only applies a scope when switching sharing ON, so
+                        // widening the scope afterwards would otherwise do nothing at all.
+                        if !sharedUids.isEmpty {
+                            if pending.sublocations > 0 || pending.items > 0 {
+                                Button {
+                                    busy = true
+                                    Task {
+                                        await viewModel.extendShare(of: location, scope: scope)
+                                        busy = false
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Apply to people it's already shared with")
+                                            .foregroundStyle(.primary)
+                                        Text("Adds \(pendingSummary)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .disabled(busy)
+                            } else {
+                                Text("Everyone it's shared with already has these sublocations.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -105,6 +145,13 @@ struct LocationShareSheet: View {
                         }
                     }
                 }
+            }
+            .onAppear {
+                // Reflect reality on reopen: if the whole subtree is already shared with
+                // everyone, don't show "This location only" as if nothing were included.
+                guard hasSublocations, !sharedUids.isEmpty else { return }
+                let covered = descendants.allSatisfy { sharedUids.isSubset(of: Set($0.location.members)) }
+                if covered { scopeMode = .all }
             }
             .navigationTitle("Share")
             .navigationBarTitleDisplayMode(.inline)

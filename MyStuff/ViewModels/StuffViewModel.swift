@@ -1022,62 +1022,135 @@ final class StuffViewModel {
         case selected(Set<String>)
     }
 
-    /// Share `location` (and scoped sublocations + their items) with `uid`, coalescing the
-    /// recipient's notifications into a single `ShareEvent`. Skips entities I can't manage and
-    /// always-private items. Assumes the caller only invokes this when `uid` is not yet a member
-    /// of the root (toggle-on path).
-    func shareLocationTree(_ location: Location, withFriend uid: String, scope: SublocationScope) async {
-        let batchId = UUID().uuidString
-
+    /// Root + scoped sublocations, restricted to the ones I own/manage.
+    private func scopedLocationIds(root: Location, scope: SublocationScope) -> [String] {
         let subIds: Set<String>
         switch scope {
         case .locationOnly: subIds = []
-        case .all: subIds = allDescendantIds(of: location.id)
+        case .all: subIds = allDescendantIds(of: root.id)
         case .selected(let ids): subIds = ids
         }
-        // Root + scoped sublocations, restricted to ones I own/manage.
-        let targetLocationIds = ([location.id] + subIds).filter { id in
+        return ([root.id] + subIds).filter { id in
             guard let loc = locations.first(where: { $0.id == id }) else { return false }
             return canManageSharing(of: loc)
         }
-        let targetSet = Set(targetLocationIds)
+    }
 
+    /// What `scope` would *newly* share with `uid`: ids only, so callers can either count them
+    /// (to drive UI) or write them. Skips entities I can't manage and always-private items.
+    private func shareTargets(
+        root: Location,
+        scope: SublocationScope,
+        for uid: String
+    ) -> (locationIds: [String], itemIds: [String]) {
+        let scopedIds = scopedLocationIds(root: root, scope: scope)
+        let scopedSet = Set(scopedIds)
+        let locationIds = scopedIds.filter { id in
+            guard let loc = locations.first(where: { $0.id == id }) else { return false }
+            return !loc.members.contains(uid)
+        }
+        let itemIds = items.filter {
+            scopedSet.contains($0.locationId ?? "")
+                && $0.isPrivate != true
+                && canManageSharing(of: $0)
+                && !$0.members.contains(uid)
+        }.map(\.id)
+        return (locationIds, itemIds)
+    }
+
+    /// Additively add `uid` to everything `scope` covers under `root`. Never removes members.
+    /// Returns how many sublocations/items were newly shared, for the coalesced `ShareEvent`.
+    @discardableResult
+    private func applyShare(
+        root: Location,
+        to uid: String,
+        scope: SublocationScope,
+        batchId: String
+    ) async throws -> (sublocations: Int, items: Int) {
+        let targets = shareTargets(root: root, scope: scope, for: uid)
         var sharedSubCount = 0
         var sharedItemCount = 0
+        // Ids snapshotted above; re-find after each await since the live listener may have
+        // replaced `locations`/`items` in the meantime.
+        for id in targets.locationIds {
+            guard var loc = locations.first(where: { $0.id == id }), !loc.members.contains(uid) else { continue }
+            loc.memberIds = loc.members + [uid]
+            loc.shareBatchId = batchId
+            try await service.updateLocation(loc)
+            if let i = locations.firstIndex(where: { $0.id == id }) { locations[i] = loc }
+            if id != root.id { sharedSubCount += 1 }
+        }
+        for id in targets.itemIds {
+            guard var it = items.first(where: { $0.id == id }), !it.members.contains(uid) else { continue }
+            it.memberIds = it.members + [uid]
+            it.shareBatchId = batchId
+            it.updatedAt = .now
+            try await service.updateItem(it)
+            if let i = items.firstIndex(where: { $0.id == id }) { items[i] = it }
+            sharedItemCount += 1
+        }
+        return (sharedSubCount, sharedItemCount)
+    }
+
+    /// Share `location` (and scoped sublocations + their items) with `uid`, coalescing the
+    /// recipient's notifications into a single `ShareEvent`.
+    func shareLocationTree(_ location: Location, withFriend uid: String, scope: SublocationScope) async {
+        let batchId = UUID().uuidString
         do {
-            // Locations (only those that don't already include uid).
-            for id in targetLocationIds {
-                guard var loc = locations.first(where: { $0.id == id }), !loc.members.contains(uid) else { continue }
-                loc.memberIds = loc.members + [uid]
-                loc.shareBatchId = batchId
-                try await service.updateLocation(loc)
-                if let i = locations.firstIndex(where: { $0.id == id }) { locations[i] = loc }
-                if id != location.id { sharedSubCount += 1 }
-            }
-            // Items in any target location — skip private + not-manageable + already-shared.
-            let shareableItems = items.filter {
-                targetSet.contains($0.locationId ?? "")
-                    && $0.isPrivate != true
-                    && canManageSharing(of: $0)
-                    && !$0.members.contains(uid)
-            }
-            for item in shareableItems {
-                guard var it = items.first(where: { $0.id == item.id }) else { continue }
-                it.memberIds = it.members + [uid]
-                it.shareBatchId = batchId
-                it.updatedAt = .now
-                try await service.updateItem(it)
-                if let i = items.firstIndex(where: { $0.id == it.id }) { items[i] = it }
-                sharedItemCount += 1
-            }
+            let counts = try await applyShare(root: location, to: uid, scope: scope, batchId: batchId)
             try await service.addShareEvent(ShareEvent(
                 ownerId: currentUserId,
                 recipientUid: uid,
                 locationId: location.id,
                 locationName: location.name,
-                itemCount: sharedItemCount,
-                sublocationCount: sharedSubCount
+                itemCount: counts.items,
+                sublocationCount: counts.sublocations
             ))
+            HapticManager.success()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// How much the current scope would still add for the people `location` is *already* shared
+    /// with. Drives the "update existing shares" affordance — without it, changing the scope
+    /// after sharing is inert, since the friend toggle only applies a scope on the share-on tap.
+    func pendingShareAdditions(
+        of location: Location,
+        scope: SublocationScope
+    ) -> (sublocations: Int, items: Int) {
+        let live = locations.first(where: { $0.id == location.id }) ?? location
+        var subs = 0
+        var itemCount = 0
+        for uid in sharedMembers(of: live) {
+            let targets = shareTargets(root: live, scope: scope, for: uid)
+            subs += targets.locationIds.filter { $0 != live.id }.count
+            itemCount += targets.itemIds.count
+        }
+        return (subs, itemCount)
+    }
+
+    /// Additively extend an existing share of `location` to everything the (possibly widened)
+    /// `scope` now covers, for every friend it is already shared with. Additive only — narrowing
+    /// the scope never revokes access.
+    func extendShare(of location: Location, scope: SublocationScope) async {
+        let live = locations.first(where: { $0.id == location.id }) ?? location
+        let recipients = sharedMembers(of: live)
+        guard !recipients.isEmpty else { return }
+        let batchId = UUID().uuidString
+        do {
+            for uid in recipients {
+                let counts = try await applyShare(root: live, to: uid, scope: scope, batchId: batchId)
+                guard counts.sublocations > 0 || counts.items > 0 else { continue }
+                try await service.addShareEvent(ShareEvent(
+                    ownerId: currentUserId,
+                    recipientUid: uid,
+                    locationId: live.id,
+                    locationName: live.name,
+                    itemCount: counts.items,
+                    sublocationCount: counts.sublocations
+                ))
+            }
             HapticManager.success()
         } catch {
             errorMessage = error.localizedDescription

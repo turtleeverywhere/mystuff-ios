@@ -19,9 +19,50 @@ struct HomeView: View {
     @State private var showFilters = false
     @AppStorage("homeViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
+    /// Newline-separated ids of root location cards the user collapsed.
+    @AppStorage("homeCollapsedLocations") private var collapsedLocationsRaw = ""
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isGallery: Bool { viewMode == "gallery" }
+
+    // MARK: - Collapse State
+
+    /// Key used for the "Unassigned" card, which has no location id.
+    private static let unassignedKey = "__unassigned__"
+
+    private var collapsedLocations: Set<String> {
+        Set(collapsedLocationsRaw.split(separator: "\n").map(String.init))
+    }
+
+    private func isCollapsed(_ key: String) -> Bool {
+        collapsedLocations.contains(key)
+    }
+
+    private func toggleCollapsed(_ key: String) {
+        var set = collapsedLocations
+        if set.contains(key) { set.remove(key) } else { set.insert(key) }
+        collapsedLocationsRaw = set.sorted().joined(separator: "\n")
+    }
+
+    /// Every root-level card key currently on screen.
+    private var collapsibleKeys: [String] {
+        var keys = viewModel.rootLocations.map(\.id)
+        if !filtered(viewModel.unassignedItems).isEmpty {
+            keys.append(Self.unassignedKey)
+        }
+        return keys
+    }
+
+    private var allCollapsed: Bool {
+        let keys = collapsibleKeys
+        guard !keys.isEmpty else { return false }
+        let collapsed = collapsedLocations
+        return keys.allSatisfy { collapsed.contains($0) }
+    }
+
+    private func toggleAll() {
+        collapsedLocationsRaw = allCollapsed ? "" : collapsibleKeys.sorted().joined(separator: "\n")
+    }
 
     /// Items matching current search + filters
     private var homeFilteredItems: Set<String> {
@@ -79,6 +120,18 @@ struct HomeView: View {
                 if isGallery && horizontalSizeClass == .regular {
                     ToolbarItem(placement: .primaryAction) {
                         GalleryColumnSlider()
+                    }
+                }
+                if viewModel.selectedGrouping == .location && !collapsibleKeys.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            withAnimation(.snappy) { toggleAll() }
+                        } label: {
+                            Image(systemName: allCollapsed
+                                  ? "rectangle.expand.vertical"
+                                  : "rectangle.compress.vertical")
+                        }
+                        .accessibilityLabel(allCollapsed ? "Expand all locations" : "Collapse all locations")
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -250,49 +303,77 @@ struct HomeView: View {
     // MARK: - Location Card
 
     private func locationCard(_ location: Location, directItems: [Item], descendantEntries: [(sublocation: Location, items: [Item])], totalCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(location.emoji ?? "📍")
-                    .font(.title2)
-                Text(location.name)
-                    .font(.headline)
-                Spacer()
-                Text("\(totalCount)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
+        let collapsed = isCollapsed(location.id)
+        return VStack(alignment: .leading, spacing: 12) {
+            cardHeader(
+                emoji: location.emoji ?? "📍",
+                title: location.name,
+                count: totalCount,
+                collapsed: collapsed
+            ) {
+                toggleCollapsed(location.id)
             }
 
-            if directItems.isEmpty && descendantEntries.isEmpty {
-                Text("No items here")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
-                    .padding(.vertical, 4)
-            } else if isGallery {
-                galleryGrid(directItems)
+            if !collapsed {
+                if directItems.isEmpty && descendantEntries.isEmpty {
+                    Text("No items here")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                } else if isGallery {
+                    galleryGrid(directItems)
 
-                ForEach(descendantEntries, id: \.sublocation.id) { entry in
-                    sublocationHeader(entry.sublocation, relativeTo: location)
-                    galleryGrid(entry.items)
-                }
-            } else {
-                ForEach(directItems) { item in
-                    itemRow(item, tag: categoryTag(for: item))
-                }
-
-                ForEach(descendantEntries, id: \.sublocation.id) { entry in
-                    sublocationHeader(entry.sublocation, relativeTo: location)
-                    ForEach(entry.items) { item in
+                    ForEach(descendantEntries, id: \.sublocation.id) { entry in
+                        sublocationHeader(entry.sublocation, relativeTo: location)
+                        galleryGrid(entry.items)
+                    }
+                } else {
+                    ForEach(directItems) { item in
                         itemRow(item, tag: categoryTag(for: item))
-                            .padding(.leading, 8)
+                    }
+
+                    ForEach(descendantEntries, id: \.sublocation.id) { entry in
+                        sublocationHeader(entry.sublocation, relativeTo: location)
+                        ForEach(entry.items) { item in
+                            itemRow(item, tag: categoryTag(for: item))
+                                .padding(.leading, 8)
+                        }
                     }
                 }
             }
         }
         .padding()
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Tappable card header with a collapse chevron.
+    private func cardHeader(emoji: String, title: String, count: Int, collapsed: Bool, onTap: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy) { onTap() }
+        } label: {
+            HStack {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                Text(emoji)
+                    .font(.title2)
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("\(count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count) items")
+        .accessibilityHint(collapsed ? "Expand" : "Collapse")
     }
 
     private func sublocationHeader(_ sublocation: Location, relativeTo root: Location) -> some View {
@@ -304,39 +385,41 @@ struct HomeView: View {
         } else {
             relativePath = sublocation.name
         }
-        return HStack(spacing: 4) {
-            Text(sublocation.emoji ?? "📍")
-                .font(.caption)
-            Text(relativePath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .opacity(0.5)
+            HStack(spacing: 6) {
+                Text(sublocation.emoji ?? "📍")
+                    .font(.subheadline)
+                Text(relativePath)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.top, 4)
+        .padding(.top, 6)
     }
 
     // MARK: - Unassigned Location Card
 
     private func unassignedLocationCard(items: [Item]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("❓")
-                    .font(.title2)
-                Text("Unassigned")
-                    .font(.headline)
-                Spacer()
-                Text("\(items.count)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
+        let collapsed = isCollapsed(Self.unassignedKey)
+        return VStack(alignment: .leading, spacing: 12) {
+            cardHeader(
+                emoji: "❓",
+                title: "Unassigned",
+                count: items.count,
+                collapsed: collapsed
+            ) {
+                toggleCollapsed(Self.unassignedKey)
             }
 
-            if isGallery {
-                galleryGrid(items)
-            } else {
-                ForEach(items) { item in
-                    itemRow(item, tag: categoryTag(for: item))
+            if !collapsed {
+                if isGallery {
+                    galleryGrid(items)
+                } else {
+                    ForEach(items) { item in
+                        itemRow(item, tag: categoryTag(for: item))
+                    }
                 }
             }
         }
@@ -649,23 +732,19 @@ struct MoveItemSheet: View {
                     Button {
                         selectMove(toLocationId: nil)
                     } label: {
-                        Label("Unassigned", systemImage: "questionmark.circle")
-                    }
-                    .tint(item.locationId == nil ? .accentColor : .primary)
-
-                    ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                        Button {
-                            selectMove(toLocationId: entry.location.id)
-                        } label: {
-                            Label {
-                                Text(entry.location.name)
-                            } icon: {
-                                Text(entry.location.emoji ?? "📍")
-                            }
+                        HStack(spacing: 10) {
+                            Image(systemName: "questionmark.circle")
+                                .foregroundStyle(.secondary)
+                            Text("Unassigned")
+                            Spacer()
+                            if item.locationId == nil { LocationPickerCheckmark() }
                         }
-                        .tint(item.locationId == entry.location.id ? .accentColor : .primary)
-                        .padding(.leading, CGFloat(entry.depth) * 20)
                     }
+                    .tint(.primary)
+                }
+
+                LocationTreeSections(viewModel: viewModel, selectedId: item.locationId) { locationId in
+                    selectMove(toLocationId: locationId)
                 }
             }
             .navigationTitle("Move Item")

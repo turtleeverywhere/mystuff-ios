@@ -32,6 +32,11 @@ final class MockSocialService: SocialService, @unchecked Sendable {
         }
     }
 
+    func deleteRequests(with uid: String) async throws {
+        incoming.removeAll { $0.fromUid == uid || $0.toUid == uid }
+        outgoing.removeAll { $0.fromUid == uid || $0.toUid == uid }
+    }
+
     func fetchFriends() async throws -> [Friend] { friends }
 
     func addFriend(_ friend: Friend) async throws {

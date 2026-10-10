@@ -58,6 +58,7 @@ struct ItemFilterBar: View {
     let putBackTargets: [Item]
     let onPutAllBack: () -> Void
     let onClearAll: () -> Void
+    @State private var confirmingPutAllBack = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -107,14 +108,22 @@ struct ItemFilterBar: View {
                     Text("Locations")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                    // Chips can't indent, so hierarchy shows two other ways: a
+                    // divider between top-level places, and a "↳" per level for
+                    // sublocations within one.
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                                chip(
-                                    label: String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name,
-                                    isSelected: filter.locationIds.contains(entry.location.id)
-                                ) {
-                                    toggle(entry.location.id, in: &filter.locationIds)
+                            ForEach(Array(LocationTree.groups(viewModel).enumerated()), id: \.element.root.id) { index, group in
+                                if index > 0 {
+                                    Divider().frame(height: 20)
+                                }
+                                ForEach(group.entries, id: \.location.id) { entry in
+                                    chip(
+                                        label: String(repeating: "↳", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name,
+                                        isSelected: filter.locationIds.contains(entry.location.id)
+                                    ) {
+                                        toggle(entry.location.id, in: &filter.locationIds)
+                                    }
                                 }
                             }
                         }
@@ -128,16 +137,48 @@ struct ItemFilterBar: View {
                     filter.misplacedOnly.toggle()
                 }
 
-                if filter.misplacedOnly && !putBackTargets.isEmpty {
-                    Button("Put All Back (\(putBackTargets.count))", action: onPutAllBack)
-                        .font(.caption)
-                }
+                actionRow
+            }
+        }
+        .confirmationDialog(
+            "Put back \(putBackTargets.count) \(putBackTargets.count == 1 ? "item" : "items")?",
+            isPresented: $confirmingPutAllBack,
+            titleVisibility: .visible
+        ) {
+            Button("Put All Back", role: .destructive, action: onPutAllBack)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Each item moves to its supposed location.")
+        }
+    }
 
+    /// Full-width buttons on their own row so both clear the 44pt touch target and
+    /// can't be mistaken for each other.
+    @ViewBuilder
+    private var actionRow: some View {
+        let showPutBack = filter.misplacedOnly && !putBackTargets.isEmpty
+        if showPutBack || isFiltering {
+            HStack(spacing: 12) {
+                if showPutBack {
+                    Button {
+                        confirmingPutAllBack = true
+                    } label: {
+                        Text("Put All Back (\(putBackTargets.count))")
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
                 if isFiltering {
-                    Button("Clear All", action: onClearAll)
-                        .font(.caption)
+                    Button(action: onClearAll) {
+                        Text("Clear All")
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
+            .font(.subheadline)
+            .controlSize(.large)
+            .padding(.top, 4)
         }
     }
 

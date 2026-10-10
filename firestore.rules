@@ -23,6 +23,9 @@ service cloud.firestore {
 
       match /friends/{friendUid} {
         allow read, write: if signedIn() && request.auth.uid == uid;
+        // Unfriend is two-sided: you may delete the doc that represents YOU in
+        // someone else's friend list (and only that one).
+        allow delete: if signedIn() && request.auth.uid == friendUid;
       }
 
       match /fcmTokens/{tokenId} {
@@ -61,7 +64,9 @@ service cloud.firestore {
 
     match /friendRequests/{requestId} {
       allow create: if signedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow read, update: if signedIn()
+      // Delete: either party clears the request on unfriend, so an accepted
+      // request can't resurrect the friendship.
+      allow read, update, delete: if signedIn()
         && (request.auth.uid == resource.data.fromUid
             || request.auth.uid == resource.data.toUid);
     }

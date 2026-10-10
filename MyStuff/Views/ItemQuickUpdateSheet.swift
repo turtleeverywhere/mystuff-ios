@@ -12,6 +12,8 @@ struct ItemQuickUpdateSheet: View {
     @State private var selectedLocationId: String
     @State private var newPhotoData: Data?
     @State private var showLocationFormSheet = false
+    @State private var showLocationScanner = false
+    @State private var unknownScan = false
     @State private var showPhotoSource = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
@@ -47,13 +49,30 @@ struct ItemQuickUpdateSheet: View {
                 }
 
                 Section("Location") {
-                    Picker("Location", selection: $selectedLocationId) {
-                        Text("Unassigned").tag(Self.unassignedSentinel)
-                        ForEach(viewModel.flattenedLocationTree(), id: \.location.id) { entry in
-                            Text(String(repeating: "  ", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name)
-                                .tag(entry.location.id)
+                    LocationPickerRow(
+                        viewModel: viewModel,
+                        label: "Location",
+                        pickerTitle: "Choose Location",
+                        selection: locationBinding
+                    )
+
+                    if QRScannerView.isSupported {
+                        Button {
+                            showLocationScanner = true
+                        } label: {
+                            Label("Scan Location QR", systemImage: "qrcode.viewfinder")
                         }
                     }
+
+                    NFCScanButton(accepts: .location) { target in
+                        selectScanned(target)
+                    } label: { scanning in
+                        Label(
+                            scanning ? "Hold near tag…" : "Scan Location NFC Tag",
+                            systemImage: "wave.3.right"
+                        )
+                    }
+
                     Button {
                         showLocationFormSheet = true
                     } label: {
@@ -88,6 +107,16 @@ struct ItemQuickUpdateSheet: View {
                 }
             )
         }
+        .sheet(isPresented: $showLocationScanner) {
+            QRScannerSheet(accepts: .location) { target in
+                selectScanned(target)
+            }
+        }
+        .alert("Location not found", isPresented: $unknownScan) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("That code points to a location that no longer exists.")
+        }
         .sheet(isPresented: $showPhotoSource) {
             PhotoSourceSheet(
                 onCamera: { showCamera = true },
@@ -109,6 +138,24 @@ struct ItemQuickUpdateSheet: View {
                 }
                 self.selectedPhoto = nil
             }
+        }
+    }
+
+    /// Bridges the sentinel-backed state to the picker's optional selection.
+    private var locationBinding: Binding<String?> {
+        Binding(
+            get: { selectedLocationId == Self.unassignedSentinel ? nil : selectedLocationId },
+            set: { selectedLocationId = $0 ?? Self.unassignedSentinel }
+        )
+    }
+
+    /// Shared by both scanners: QR and NFC resolve to the same target.
+    private func selectScanned(_ target: AppLink.Target) {
+        let locationId = target.entityId
+        if viewModel.locations.contains(where: { $0.id == locationId }) {
+            selectedLocationId = locationId
+        } else {
+            unknownScan = true
         }
     }
 

@@ -83,6 +83,22 @@ final class FirebaseSocialService: SocialService, @unchecked Sendable {
         ])
     }
 
+    func deleteRequests(with uid: String) async throws {
+        let me = currentUserId
+        // Two single-equality queries (server-indexed) + client-side filter on the other
+        // side, so no composite index is needed.
+        async let sentSnap = requestsCollection.whereField("fromUid", isEqualTo: me).getDocuments()
+        async let receivedSnap = requestsCollection.whereField("toUid", isEqualTo: me).getDocuments()
+        let sent = try await sentSnap.documents.filter { $0.data()["toUid"] as? String == uid }
+        let received = try await receivedSnap.documents.filter { $0.data()["fromUid"] as? String == uid }
+
+        let stale = sent + received
+        guard !stale.isEmpty else { return }
+        let batch = db.batch()
+        for doc in stale { batch.deleteDocument(doc.reference) }
+        try await batch.commit()
+    }
+
     // MARK: - Friends
 
     func fetchFriends() async throws -> [Friend] {
@@ -95,7 +111,13 @@ final class FirebaseSocialService: SocialService, @unchecked Sendable {
     }
 
     func removeFriend(uid: String) async throws {
-        try await friendsCollection(currentUserId).document(uid).delete()
+        let me = currentUserId
+        // Atomic so we never end up half-unfriended: the friend rule lets each side
+        // delete its own entry in the other's list.
+        let batch = db.batch()
+        batch.deleteDocument(friendsCollection(me).document(uid))
+        batch.deleteDocument(friendsCollection(uid).document(me))
+        try await batch.commit()
     }
 
     // MARK: - Live streams
