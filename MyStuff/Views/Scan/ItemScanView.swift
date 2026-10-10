@@ -13,6 +13,10 @@ struct ItemScanView: View {
     @State private var showDiscardConfirm = false
     /// Transient one-line message above the tray.
     @State private var banner: String?
+    /// A location code seen by the camera that differs from the chosen destination.
+    @State private var conflictingDestinationId: String?
+    /// Locations the user declined to switch to; their codes are ignored from then on.
+    @State private var declinedDestinationIds: Set<String> = []
 
     init(viewModel: StuffViewModel, destinationId: String? = nil) {
         self.viewModel = viewModel
@@ -31,6 +35,13 @@ struct ItemScanView: View {
 
     private var trayItems: [Item] {
         session.trayItemIds.compactMap { id in viewModel.items.first { $0.id == id } }
+    }
+
+    /// True while something covers the viewfinder. The scanner keeps running
+    /// underneath, and codes it sees then must not change the session unseen.
+    private var isCovered: Bool {
+        showReview || showDestinationPicker || showDiscardConfirm
+            || session.pendingCaptureId != nil || conflictingDestinationId != nil
     }
 
     /// Drives the match card. Swiping the card away drops an undecided capture.
@@ -97,6 +108,32 @@ struct ItemScanView: View {
             Button("Discard \(trayItems.count) item\(trayItems.count == 1 ? "" : "s")", role: .destructive) { dismiss() }
             Button("Keep Scanning", role: .cancel) { }
         }
+        .confirmationDialog(
+            destinationConflictTitle,
+            isPresented: Binding(
+                get: { conflictingDestinationId != nil },
+                set: { if !$0 { conflictingDestinationId = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let id = conflictingDestinationId {
+                Button("Switch to \(locationName(id))") {
+                    apply(.location(id), replacingDestination: true)
+                }
+                Button("Keep \(destination?.name ?? "current")", role: .cancel) {
+                    declinedDestinationIds.insert(id)
+                }
+            }
+        }
+    }
+
+    private var destinationConflictTitle: String {
+        guard let id = conflictingDestinationId else { return "" }
+        return "The camera saw the code for \(locationName(id)). Move the items there instead?"
+    }
+
+    private func locationName(_ id: String) -> String {
+        viewModel.locations.first { $0.id == id }?.name ?? "that location"
     }
 
     // MARK: - Pieces
@@ -138,8 +175,10 @@ struct ItemScanView: View {
                 .padding(.vertical, 10)
                 .background(.ultraThinMaterial, in: Capsule())
             if CoreNFCService.readingAvailable {
+                // Holding the phone to a tag is deliberate, unlike a code drifting
+                // into frame, so it may replace the destination outright.
                 NFCScanButton(accepts: .any) { target in
-                    handleTarget(target)
+                    apply(target, replacingDestination: true)
                 } label: { _ in
                     Image(systemName: "wave.3.right")
                         .padding(10)
@@ -153,6 +192,17 @@ struct ItemScanView: View {
     }
 
     private var tray: some View {
+        ScrollViewReader { proxy in
+            trayStrip
+                // Keep the newest chip in view so every match is seen landing.
+                .onChange(of: session.trayItemIds.last) { _, newest in
+                    guard let newest else { return }
+                    withAnimation { proxy.scrollTo(newest, anchor: .trailing) }
+                }
+        }
+    }
+
+    private var trayStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(trayItems) { item in
@@ -175,6 +225,7 @@ struct ItemScanView: View {
                         .background(.ultraThinMaterial, in: Capsule())
                     }
                     .tint(.primary)
+                    .id(item.id)
                 }
             }
             .padding(.horizontal)
@@ -188,7 +239,9 @@ struct ItemScanView: View {
             switch await session.capture(imageData: data) {
             case .confident(let match, let alternatives):
                 HapticManager.success()
-                showDistances(of: match, runnerUp: alternatives.first)
+                // Always say what it was taken for — an unseen wrong match would be
+                // moved, and then learned, on Confirm.
+                show("Matched: \(itemName(match.itemId))" + distanceNote(of: match, runnerUp: alternatives.first))
             case .ambiguous, .noMatch:
                 HapticManager.light()
             case nil:
@@ -198,25 +251,43 @@ struct ItemScanView: View {
     }
 
     /// Threshold tuning aid for DEBUG builds — see `ItemMatcher`'s constants.
-    private func showDistances(of match: ItemMatch, runnerUp: ItemMatch?) {
+    private func distanceNote(of match: ItemMatch, runnerUp: ItemMatch?) -> String {
         #if DEBUG
         let next = runnerUp.map { String(format: "%.2f", $0.distance) } ?? "–"
-        show(String(format: "Matched at %.2f (next %@)", match.distance, next))
+        return String(format: " · %.2f (next %@)", match.distance, next)
+        #else
+        return ""
         #endif
     }
 
+    private func itemName(_ id: String) -> String {
+        viewModel.items.first { $0.id == id }?.name ?? "item"
+    }
+
+    /// A QR code in the viewfinder. Ignored while a sheet or dialog covers it.
     private func handleCode(_ payload: String) {
+        guard !isCovered else { return }
         guard let url = URL(string: payload), let target = AppLink.parse(url) else {
             show("Not a MyStuff code")
             return
         }
-        handleTarget(target)
+        apply(target, replacingDestination: false)
     }
 
-    private func handleTarget(_ target: AppLink.Target) {
-        switch session.handle(target) {
-        case .addedItem, .setDestination:
+    private func apply(_ target: AppLink.Target, replacingDestination: Bool) {
+        let previousDestination = session.destinationId
+        switch session.handle(target, replacingDestination: replacingDestination) {
+        case .addedItem(let id):
             HapticManager.success()
+            show("Added: \(itemName(id))")
+        case .setDestination(let id):
+            // The same code re-read (tracking flicker) is not news.
+            guard id != previousDestination else { return }
+            HapticManager.success()
+            show("Destination: \(locationName(id))")
+        case .destinationConflict(let id):
+            guard !declinedDestinationIds.contains(id) else { return }
+            conflictingDestinationId = id
         case .alreadyInTray:
             show("Already scanned")
         case .unknown:
@@ -231,13 +302,16 @@ struct ItemScanView: View {
             let id = UUID().uuidString
             await viewModel.addItem(id: id, name: name, notes: nil, locationId: session.destinationId, categoryId: nil)
             guard let item = viewModel.items.first(where: { $0.id == id }) else {
+                session.discard(capture.id)
                 show("Couldn't create the item")
                 return
             }
+            // Resolve before the photo: that closes the card at once, so a second
+            // tap can't create the item twice while the photo is being embedded.
+            session.resolve(capture.id, to: id, origin: .created)
             if let photo = capture.photo {
                 await viewModel.setItemPhoto(for: item, imageData: photo)
             }
-            session.resolve(capture.id, to: id, origin: .created)
         }
     }
 

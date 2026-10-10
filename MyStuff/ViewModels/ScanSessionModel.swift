@@ -45,6 +45,9 @@ final class ScanSessionModel {
         case addedItem(String)
         case alreadyInTray(String)
         case setDestination(String)
+        /// A location code other than the current destination was seen in passing.
+        /// Nothing changed — the caller asks before switching.
+        case destinationConflict(String)
         /// The code points at an item or location that no longer exists.
         case unknown
     }
@@ -154,19 +157,30 @@ final class ScanSessionModel {
         }
     }
 
+    func latestCapture(for itemId: String) -> Capture? {
+        captures.last { $0.itemId == itemId }
+    }
+
     func latestCaptureId(for itemId: String) -> UUID? {
-        captures.last { $0.itemId == itemId }?.id
+        latestCapture(for: itemId)?.id
     }
 
     // MARK: - Codes
 
     /// A QR or NFC code seen during the session: a location code sets the
     /// destination, an item code adds that item to the tray.
+    ///
+    /// The camera reads every code that drifts into frame, so a location code
+    /// only *fills in* a missing destination. Replacing one that is already set
+    /// takes `replacingDestination` — a deliberate scan, or the user's yes.
     @discardableResult
-    func handle(_ target: AppLink.Target) -> CodeResult {
+    func handle(_ target: AppLink.Target, replacingDestination: Bool = false) -> CodeResult {
         switch target {
         case .location(let id):
             guard locations().contains(where: { $0.id == id }) else { return .unknown }
+            if let destinationId, destinationId != id, !replacingDestination {
+                return .destinationConflict(id)
+            }
             destinationId = id
             return .setDestination(id)
         case .item(let id):

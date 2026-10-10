@@ -48,6 +48,17 @@ struct QRScannerView: UIViewControllerRepresentable {
             handle([item])
         }
 
+        /// Once the reported code has left the frame, showing it again is a new scan.
+        func dataScanner(_ scanner: DataScannerViewController,
+                         didRemove removedItems: [RecognizedItem],
+                         allItems: [RecognizedItem]) {
+            let stillVisible = allItems.contains { item in
+                if case .barcode(let barcode) = item { return barcode.payloadStringValue == lastReported }
+                return false
+            }
+            if !stillVisible { lastReported = nil }
+        }
+
         private func handle(_ items: [RecognizedItem]) {
             for case let .barcode(barcode) in items {
                 guard let payload = barcode.payloadStringValue else { continue }

@@ -220,12 +220,16 @@ Operations: `capture(_ image: UIImage)`, `resolve(_ captureId:to:origin:)`,
 
 - **Destination bar** (top, glass). Shows the destination's emoji + name, or "Choose
   location". Tapping opens a sheet with `LocationTreeSections` and an `NFCScanButton`.
-  A location QR seen by the viewfinder sets the destination directly.
+  A location QR seen by the viewfinder fills in a missing destination; if a different
+  one is already set, the app asks before switching (declined locations are ignored
+  for the rest of the session).
 - **Viewfinder** — `ScanCaptureStage`: the existing `QRScannerView`
   (`DataScannerViewController`) extended with a `ScanCameraController` that exposes
   `capturePhoto()`, plus reticle and shutter.
 - **Shutter** → `capture`. Outcome:
-  - `confident` → capture resolved to the match, added to the tray, success haptic.
+  - `confident` → capture resolved to the match, added to the tray, success haptic,
+    and a "Matched: <name>" line (all builds; DEBUG adds distances). The tray scrolls
+    to the new chip.
   - `ambiguous` / `noMatch` → `ScanMatchCard` slides up.
 - **`ScanMatchCard`** — captured thumbnail; up to three candidate rows (thumbnail,
   name, current location); "Other…" (searchable list of all items); "New item";
@@ -239,8 +243,11 @@ Codes inside the session (viewfinder QR, or the NFC button):
 
 - item code → added to the tray with `origin: .code`, no embedding. This is the path
   for near-identical items.
-- location code → sets `destination`.
+- location code → sets `destination` when none is chosen; asks first when it would
+  replace a different one. The NFC button is a deliberate scan and replaces directly.
 - unknown / foreign code → inline message, same as `QRScannerSheet`.
+- Codes are ignored while a sheet or dialog covers the viewfinder, and every accepted
+  code is announced by name ("Added: …", "Destination: …").
 
 **New item** — a name prompt, then the view calls `viewModel.addItem` (location =
 current destination, or none) and `viewModel.setItemPhoto` with the captured image,
@@ -256,7 +263,8 @@ same "Open Settings" state `QRScannerSheet` uses.
 `MyStuff/Views/Scan/ScanReviewSheet.swift`
 
 - Requires a destination; if none, the sheet leads with the destination picker.
-- One row per tray item: name, `current location → destination`, a checkmark toggle
+- One row per tray item: name, `current location → destination`, the photo the user
+  took for it (sparkle badge when it was matched automatically), a checkmark toggle
   (default on).
 - Items already directly in the destination show "Already here" and are not moved.
 - **Confirm**:

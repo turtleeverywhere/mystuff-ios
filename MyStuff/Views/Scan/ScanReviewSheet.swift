@@ -56,17 +56,24 @@ struct ScanReviewSheet: View {
                     .tint(.primary)
                 }
 
-                Section("Items") {
+                Section {
                     ForEach(trayItems) { item in
                         Button {
                             if !deselected.insert(item.id).inserted { deselected.remove(item.id) }
                         } label: {
                             ScanItemRow(item: item, viewModel: viewModel, subtitle: caption(for: item)) {
+                                capturedPhoto(for: item)
                                 Image(systemName: deselected.contains(item.id) ? "circle" : "checkmark.circle.fill")
                                     .foregroundStyle(deselected.contains(item.id) ? Color.secondary : Color.accentColor)
                             }
                         }
                         .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("Items")
+                } footer: {
+                    if hasAutoMatches {
+                        Label("Matched automatically — check the name against your photo.", systemImage: "sparkles")
                     }
                 }
             }
@@ -94,6 +101,35 @@ struct ScanReviewSheet: View {
             } message: {
                 Text("Nothing from this scan was lost. Try again.")
             }
+        }
+    }
+
+    private var hasAutoMatches: Bool {
+        trayItems.contains { session.latestCapture(for: $0.id)?.wasAutoAccepted == true }
+    }
+
+    /// What the user actually photographed for this row, so a wrong match is
+    /// visible before it is moved (and learned). Code scans have no photo.
+    @ViewBuilder
+    private func capturedPhoto(for item: Item) -> some View {
+        if let capture = session.latestCapture(for: item.id),
+           let data = capture.embedding?.thumbnail,
+           let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    if capture.wasAutoAccepted {
+                        Image(systemName: "sparkles")
+                            .font(.caption2)
+                            .padding(3)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .offset(x: -6, y: -6)
+                    }
+                }
+                .accessibilityLabel(capture.wasAutoAccepted ? "Your photo, matched automatically" : "Your photo")
         }
     }
 

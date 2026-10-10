@@ -174,6 +174,41 @@ struct ScanSessionModelTests {
         #expect(session.trayItemIds.isEmpty)
     }
 
+    @Test func locationCodeDoesNotSilentlyReplaceADifferentDestination() {
+        world.locations.append(Location(id: "box", name: "Box"))
+        session.destinationId = "shelf"
+
+        #expect(session.handle(.location("box")) == .destinationConflict("box"))
+        #expect(session.destinationId == "shelf")
+    }
+
+    @Test func locationCodeForTheCurrentDestinationIsNotAConflict() {
+        session.destinationId = "shelf"
+
+        #expect(session.handle(.location("shelf")) == .setDestination("shelf"))
+        #expect(session.destinationId == "shelf")
+    }
+
+    @Test func deliberateLocationScanReplacesTheDestination() {
+        world.locations.append(Location(id: "box", name: "Box"))
+        session.destinationId = "shelf"
+
+        #expect(session.handle(.location("box"), replacingDestination: true) == .setDestination("box"))
+        #expect(session.destinationId == "box")
+    }
+
+    @Test func latestCaptureIsTheMostRecentOneForTheItem() async throws {
+        store.add(.fake([1, 0]), to: "a", source: .itemPhoto)
+        await session.capture(imageData: .fakeImage([1, 0]))
+        await session.capture(imageData: .fakeImage([0, 1]))
+        session.resolve(try #require(session.pendingCaptureId), to: "a")
+
+        let latest = try #require(session.latestCapture(for: "a"))
+        #expect(latest.embedding?.vector == [0, 1])
+        #expect(latest.wasAutoAccepted == false)
+        #expect(session.latestCapture(for: "b") == nil)
+    }
+
     @Test func codesForMissingEntitiesAreUnknown() {
         #expect(session.handle(.item("gone")) == .unknown)
         #expect(session.handle(.location("gone")) == .unknown)
