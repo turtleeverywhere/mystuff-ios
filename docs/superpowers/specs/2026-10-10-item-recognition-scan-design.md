@@ -166,8 +166,8 @@ enum ItemMatcher {
 }
 ```
 
-- Distance is Euclidean over the Float vectors (what `FeaturePrintObservation.distance`
-  computes), via Accelerate.
+- Distance is Euclidean over the Float vectors, via Accelerate. Vectors are unit
+  length, so it runs 0…2. (`FeaturePrintObservation.distance` is the square of this.)
 - An item's distance is the minimum over its references. References for unknown items
   or another `modelID` are skipped.
 - `confident`: best ≤ `acceptDistance` **and** runner-up item is at least `acceptMargin`

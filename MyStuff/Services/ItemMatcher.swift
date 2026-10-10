@@ -26,7 +26,9 @@ enum ItemMatcher {
     static let rejectDistance: Float = 0.90
     static let maxCandidates = 3
 
-    /// Euclidean distance — what Vision's `FeaturePrintObservation.distance(to:)` computes.
+    /// Euclidean distance. Feature-print vectors are unit length, so this runs 0…2.
+    /// Vision's own `FeaturePrintObservation.distance(to:)` returns the *square* of
+    /// this — same ordering, different scale; the thresholds above are on this scale.
     /// Vectors of different (or zero) length are incomparable: `.infinity`.
     static func distance(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return .infinity }
