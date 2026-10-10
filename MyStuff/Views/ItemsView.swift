@@ -6,6 +6,7 @@ struct ItemsView: View {
     @State private var showingAddSheet = false
     @State private var editingItem: Item?
     @State private var movingItem: Item?
+    @State private var itemToDelete: Item?
     @State private var photoSourceItem: Item?
     @State private var showPhotoSource = false
     @State private var previewItem: Item?
@@ -149,6 +150,7 @@ struct ItemsView: View {
                     }
                 )
             }
+            .confirmItemDeletion($itemToDelete, viewModel: viewModel)
             .sheet(item: $movingItem) { item in
                 MoveItemSheet(
                     item: item,
@@ -258,7 +260,7 @@ struct ItemsView: View {
         .accessibilityAddTraits(.isButton)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
-                Task { await viewModel.deleteItem(item) }
+                itemToDelete = item
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -321,7 +323,7 @@ struct ItemsView: View {
             Label("Change Photo", systemImage: "camera")
         }
         Button(role: .destructive) {
-            Task { await viewModel.deleteItem(item) }
+            itemToDelete = item
         } label: {
             Label("Delete", systemImage: "trash")
         }

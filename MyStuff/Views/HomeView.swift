@@ -18,6 +18,7 @@ struct HomeView: View {
     @State private var filter = ItemFilter()
     @State private var showFilters = false
     @State private var showItemScan = false
+    @State private var itemToDelete: Item?
     @AppStorage("homeViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
     /// Newline-separated ids of root location cards the user collapsed.
@@ -154,6 +155,7 @@ struct HomeView: View {
             .fullScreenCover(isPresented: $showItemScan) {
                 ItemScanView(viewModel: viewModel)
             }
+            .confirmItemDeletion($itemToDelete, viewModel: viewModel)
             .sheet(item: $selectedItem) { item in
                 MoveItemSheet(
                     item: item,
@@ -538,6 +540,13 @@ struct HomeView: View {
             detailItem = item
         } label: {
             Label("Details", systemImage: "info.circle")
+        }
+        if viewModel.canManageSharing(of: item) {
+            Button(role: .destructive) {
+                itemToDelete = item
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
     }
 

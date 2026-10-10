@@ -15,6 +15,8 @@ struct LocationDetailView: View {
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
     @State private var showingItemScan = false
+    @State private var itemToDelete: Item?
+    @State private var locationToDelete: Location?
     @State private var showingAddItem = false
     @State private var photoSourceItem: Item?
     @State private var showPhotoSource = false
@@ -24,6 +26,7 @@ struct LocationDetailView: View {
     @AppStorage("locationViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
 
     private var isGallery: Bool { viewMode == "gallery" }
 
@@ -85,6 +88,10 @@ struct LocationDetailView: View {
                     missingCard
                 }
                 itemsCard
+                // Deleting someone else's shared location is the owner's call.
+                if viewModel.canManageSharing(of: live) {
+                    deleteCard
+                }
             }
             .padding()
         }
@@ -151,6 +158,9 @@ struct LocationDetailView: View {
         .fullScreenCover(isPresented: $showingItemScan) {
             ItemScanView(viewModel: viewModel, destinationId: live.id)
         }
+        .confirmItemDeletion($itemToDelete, viewModel: viewModel)
+        // This screen shows the location being deleted, so it closes with it.
+        .confirmLocationDeletion($locationToDelete, viewModel: viewModel) { dismiss() }
         .sheet(isPresented: $showingAddItem) {
             ItemFormSheet(
                 initialLocationId: live.id,
@@ -320,6 +330,18 @@ struct LocationDetailView: View {
         }
     }
 
+    private var deleteCard: some View {
+        card {
+            Button(role: .destructive) {
+                locationToDelete = live
+            } label: {
+                Label("Delete Location", systemImage: "trash")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+        }
+    }
+
     private var missingCard: some View {
         card {
             HStack {
@@ -462,7 +484,7 @@ struct LocationDetailView: View {
             Label("Change Photo", systemImage: "camera")
         }
         Button(role: .destructive) {
-            Task { await viewModel.deleteItem(item) }
+            itemToDelete = item
         } label: {
             Label("Delete", systemImage: "trash")
         }

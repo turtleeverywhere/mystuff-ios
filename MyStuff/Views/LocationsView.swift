@@ -113,27 +113,7 @@ struct LocationsView: View {
             } message: {
                 Text("That code points to something that no longer exists.")
             }
-            .alert("Delete Location?", isPresented: Binding(
-                get: { locationToDelete != nil },
-                set: { if !$0 { locationToDelete = nil } }
-            )) {
-                Button("Delete", role: .destructive) {
-                    if let loc = locationToDelete {
-                        let hasChildren = !viewModel.childLocations(for: loc).isEmpty
-                        Task {
-                            await viewModel.deleteLocation(loc)
-                            _ = hasChildren // suppress unused warning
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) { locationToDelete = nil }
-            } message: {
-                if let loc = locationToDelete, !viewModel.childLocations(for: loc).isEmpty {
-                    Text("Sub-locations will be moved up one level. Items at this location will be unassigned.")
-                } else {
-                    Text("Items at this location will be unassigned.")
-                }
-            }
+            .confirmLocationDeletion($locationToDelete, viewModel: viewModel)
         }
         .containerBackground(LinearGradient.appBackground, for: .navigation)
     }

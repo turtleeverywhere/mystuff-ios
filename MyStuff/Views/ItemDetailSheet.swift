@@ -8,6 +8,7 @@ struct ItemDetailSheet: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isUploading = false
     @State private var showDeleteConfirmation = false
+    @State private var itemToDelete: Item?
     @State private var showPhotoSource = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
@@ -40,6 +41,17 @@ struct ItemDetailSheet: View {
                     .tint(.primary)
                     RecognitionPhotosSection(item: liveItem, viewModel: viewModel)
                     privacySection
+                    // Deleting someone else's shared item is the owner's call.
+                    if viewModel.canManageSharing(of: liveItem) {
+                        Button(role: .destructive) {
+                            itemToDelete = liveItem
+                        } label: {
+                            Label("Delete Item", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
                 }
                 .padding()
             }
@@ -71,6 +83,8 @@ struct ItemDetailSheet: View {
                 self.selectedPhoto = nil
             }
         }
+        // This sheet shows the item being deleted, so it closes with it.
+        .confirmItemDeletion($itemToDelete, viewModel: viewModel) { dismiss() }
         .confirmationDialog("Delete photo?", isPresented: $showDeleteConfirmation) {
             Button("Delete Photo", role: .destructive) {
                 Task { await viewModel.deletePhoto(for: item) }
