@@ -14,6 +14,7 @@ struct LocationDetailView: View {
     @State private var previewItem: Item?
     @State private var showShareSheet = false
     @State private var showingMoveItemsHere = false
+    @State private var showingItemScan = false
     @State private var showingAddItem = false
     @State private var photoSourceItem: Item?
     @State private var showPhotoSource = false
@@ -146,6 +147,9 @@ struct LocationDetailView: View {
         }
         .sheet(isPresented: $showingMoveItemsHere) {
             MoveItemsHereSheet(destination: live, viewModel: viewModel)
+        }
+        .fullScreenCover(isPresented: $showingItemScan) {
+            ItemScanView(viewModel: viewModel, destinationId: live.id)
         }
         .sheet(isPresented: $showingAddItem) {
             ItemFormSheet(
@@ -300,6 +304,16 @@ struct LocationDetailView: View {
                 showingMoveItemsHere = true
             } label: {
                 Label("Move items here", systemImage: "tray.and.arrow.down")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+
+            Divider().opacity(0.5)
+
+            Button {
+                showingItemScan = true
+            } label: {
+                Label("Scan items here", systemImage: "camera.viewfinder")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }

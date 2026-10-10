@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var homeSearchText = ""
     @State private var filter = ItemFilter()
     @State private var showFilters = false
+    @State private var showItemScan = false
     @AppStorage("homeViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
     /// Newline-separated ids of root location cards the user collapsed.
@@ -136,11 +137,22 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
+                        showItemScan = true
+                    } label: {
+                        Image(systemName: "camera.viewfinder")
+                    }
+                    .accessibilityLabel("Scan items")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
                         withAnimation { viewMode = isGallery ? "list" : "gallery" }
                     } label: {
                         Image(systemName: isGallery ? "list.bullet" : "square.grid.2x2")
                     }
                 }
+            }
+            .fullScreenCover(isPresented: $showItemScan) {
+                ItemScanView(viewModel: viewModel)
             }
             .sheet(item: $selectedItem) { item in
                 MoveItemSheet(

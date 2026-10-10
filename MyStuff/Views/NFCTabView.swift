@@ -14,6 +14,7 @@ struct NFCTabView: View {
     @State private var lastUnknownTarget: AppLink.Target?
 
     @State private var showQRScanner = false
+    @State private var showItemScan = false
     @State private var path: [Location] = []
 
     var body: some View {
@@ -76,6 +77,19 @@ struct NFCTabView: View {
                     .padding(.horizontal, 32)
                 }
 
+                Button {
+                    showItemScan = true
+                } label: {
+                    Label("Scan Items", systemImage: "camera.viewfinder")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.appAccent)
+                .controlSize(.large)
+                .padding(.horizontal, 32)
+
                 Spacer()
             }
             .navigationTitle("NFC/QR")
@@ -86,6 +100,9 @@ struct NFCTabView: View {
                 QRScannerSheet { target in
                     handle(target: target)
                 }
+            }
+            .fullScreenCover(isPresented: $showItemScan) {
+                ItemScanView(viewModel: viewModel)
             }
             .sheet(item: $updateItem) { item in
                 ItemQuickUpdateSheet(item: item, viewModel: viewModel)
