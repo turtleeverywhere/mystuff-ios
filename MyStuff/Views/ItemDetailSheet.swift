@@ -38,6 +38,7 @@ struct ItemDetailSheet: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .tint(.primary)
+                    RecognitionPhotosSection(item: liveItem, viewModel: viewModel)
                     privacySection
                 }
                 .padding()
