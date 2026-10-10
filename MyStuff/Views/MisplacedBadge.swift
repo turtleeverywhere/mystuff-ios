@@ -13,10 +13,10 @@ struct MisplacedBadge: View {
                     .font(.caption2)
             }
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(Color.appAccent)
         .padding(.horizontal, iconOnly ? 6 : 8)
         .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(Color.appSurfaceMuted, in: Capsule())
         .accessibilityLabel("Misplaced")
     }
 }

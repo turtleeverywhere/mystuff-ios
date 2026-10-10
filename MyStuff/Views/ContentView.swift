@@ -2,7 +2,9 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var authService: AuthService
-    @State private var viewModel = StuffViewModel()
+    @State private var viewModel = AppPreview.isEnabled
+        ? StuffViewModel(service: MockDataService(), storageService: MockStorageService())
+        : StuffViewModel()
     @State private var social = SocialViewModel()
     @State private var selectedTab = 0
     @State private var showingProfile = false
@@ -33,16 +35,22 @@ struct ContentView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .tint(.appPrimary)
         .background(LinearGradient.appBackground.ignoresSafeArea())
         .task {
             await viewModel.loadData()
+            if let itemId = AppPreview.itemId {
+                pendingNFCItemId = itemId
+            }
             await viewModel.liveSync()
         }
         .task {
+            guard !AppPreview.isEnabled else { return }
             PushNotificationManager.shared.requestAuthorization()
             PushNotificationManager.shared.saveTokenIfPossible()
         }
         .task {
+            guard !AppPreview.isEnabled else { return }
             social.onUnfriend = { friendUid in
                 await viewModel.unshareEverything(withFriend: friendUid)
             }
@@ -52,6 +60,14 @@ struct ContentView: View {
         }
         .onChange(of: social.friends) {
             viewModel.friends = social.friends
+        }
+        .alert("Something went wrong", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "Please try again.")
         }
         .sheet(isPresented: $showingProfile) {
             ProfileSheet(authService: authService, social: social)

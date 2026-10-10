@@ -37,33 +37,52 @@ struct LocationTreeRow: View {
     let location: Location
     let depth: Int
     var isSelected: Bool = false
+    var path: String?
     let onSelect: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 10) {
-                if depth > 0 {
+            HStack(spacing: 12) {
+                if depth > 0 && !dynamicTypeSize.isAccessibilitySize {
                     Rectangle()
-                        .fill(.tertiary)
-                        .frame(width: 2, height: 20)
-                        .padding(.leading, CGFloat(depth - 1) * 18)
+                        .fill(Color.appBorder)
+                        .frame(width: 2, height: 28)
+                        .padding(.leading, CGFloat(min(depth - 1, 3)) * 12)
+                        .accessibilityHidden(true)
                 }
-                Text(location.emoji ?? "📍")
-                Text(location.name)
-                    .fontWeight(depth == 0 ? .semibold : .regular)
+                LocationIcon(emoji: location.emoji)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(location.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.appText)
+                    if let path {
+                        Text(path)
+                            .font(.caption)
+                            .foregroundStyle(Color.appTertiary)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 if isSelected { LocationPickerCheckmark() }
             }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
         }
-        .tint(.primary)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(path ?? location.name)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .listRowBackground(isSelected ? Color.appSurfaceMuted : Color.appSurface)
     }
 }
 
 struct LocationPickerCheckmark: View {
     var body: some View {
-        Image(systemName: "checkmark")
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(Color.accentColor)
+        Image(systemName: "checkmark.circle.fill")
+            .font(.title3)
+            .foregroundStyle(Color.appPrimary)
+            .accessibilityHidden(true)
     }
 }
 
@@ -85,8 +104,120 @@ struct LocationTreeSections: View {
                     LocationTreeRow(
                         location: entry.location,
                         depth: entry.depth,
-                        isSelected: selectedId == entry.location.id
+                        isSelected: selectedId == entry.location.id,
+                        path: entry.depth > 0 ? viewModel.displayPath(for: entry.location) : nil
                     ) {
+                        onSelect(entry.location.id)
+                    }
+                }
+            } header: {
+                Text(group.root.name)
+                    .foregroundStyle(Color.appTertiary)
+            }
+        }
+    }
+}
+
+/// Reused by scan capture and review, and by item forms.
+struct LocationSelectionLabel: View {
+    let viewModel: StuffViewModel
+    let locationId: String?
+    var title = "Store in"
+    var emptyLabel = "Choose location"
+
+    private var location: Location? {
+        viewModel.locations.first { $0.id == locationId }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            LocationIcon(emoji: location?.emoji)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.appTertiary)
+                Text(location.map { viewModel.displayPath(for: $0) } ?? emptyLabel)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .dynamicTypeSize(.large)
+                .foregroundStyle(Color.appTertiary)
+                .accessibilityHidden(true)
+        }
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+    }
+}
+
+struct UnassignedLocationRow: View {
+    var title = "Unassigned"
+    var symbol = "questionmark.circle"
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                LocationIcon(emoji: nil, symbol: symbol)
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.appText)
+                Spacer()
+                if isSelected { LocationPickerCheckmark() }
+            }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .listRowBackground(isSelected ? Color.appSurfaceMuted : Color.appSurface)
+    }
+}
+
+/// Shared browsing/search content. Searches full paths to retain parent context.
+struct LocationSelectionSections: View {
+    let viewModel: StuffViewModel
+    var selectedId: String?
+    var unassignedLabel: String? = "Unassigned"
+    var unassignedIcon = "questionmark.circle"
+    var excluding: String?
+    var searchText = ""
+    let onSelect: (String?) -> Void
+
+    private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var matches: [LocationTree.Entry] {
+        viewModel.flattenedLocationTree(excluding: excluding).filter {
+            viewModel.displayPath(for: $0.location).localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        if query.isEmpty {
+            if let unassignedLabel {
+                Section {
+                    UnassignedLocationRow(title: unassignedLabel, symbol: unassignedIcon, isSelected: selectedId == nil) {
+                        onSelect(nil)
+                    }
+                }
+            }
+            if viewModel.flattenedLocationTree(excluding: excluding).isEmpty {
+                ContentUnavailableView("No locations yet", systemImage: "mappin.and.ellipse", description: Text("Create a location to give your items a home."))
+                    .listRowBackground(Color.clear)
+            } else {
+                LocationTreeSections(viewModel: viewModel, selectedId: selectedId, excluding: excluding) { onSelect($0) }
+            }
+        } else if matches.isEmpty {
+            ContentUnavailableView.search(text: query)
+                .listRowBackground(Color.clear)
+        } else {
+            Section("Results") {
+                ForEach(matches, id: \.location.id) { entry in
+                    LocationTreeRow(location: entry.location, depth: 0, isSelected: selectedId == entry.location.id,
+                                    path: viewModel.displayPath(for: entry.location)) {
                         onSelect(entry.location.id)
                     }
                 }
@@ -113,37 +244,14 @@ struct LocationPickerRow: View {
 
     @State private var showPicker = false
 
-    private var location: Location? {
-        viewModel.locations.first { $0.id == selection }
-    }
-
     var body: some View {
         Button {
             showPicker = true
         } label: {
-            HStack(spacing: 10) {
-                Text(label)
-                Spacer(minLength: 12)
-                if let location {
-                    Text(location.emoji ?? "📍")
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(location.name)
-                        if location.parentId != nil {
-                            Text(viewModel.displayPath(for: location))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } else {
-                    Text(emptyLabel)
-                        .foregroundStyle(.secondary)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
+            LocationSelectionLabel(viewModel: viewModel, locationId: selection, title: label, emptyLabel: emptyLabel)
         }
-        .tint(.primary)
+        .buttonStyle(.plain)
+        .accessibilityHint("Choose a storage location")
         .sheet(isPresented: $showPicker) {
             LocationSearchSheet(
                 viewModel: viewModel,
@@ -163,6 +271,7 @@ struct LocationPickerRow: View {
 struct LocationSearchSheet: View {
     let viewModel: StuffViewModel
     var title: String = "Move to Location"
+    var subtitle: String = "Choose a place or a specific shelf."
     /// Currently chosen location, checkmarked while browsing. `nil` means none.
     var selectedId: String?
     /// Label of the "no location" row; `nil` hides that row entirely.
@@ -174,63 +283,26 @@ struct LocationSearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
-    private var matches: [LocationTree.Entry] {
-        viewModel.flattenedLocationTree(excluding: excluding)
-            .filter { $0.location.name.localizedCaseInsensitiveContains(searchText) }
-    }
-
     var body: some View {
         NavigationStack {
             List {
-                if searchText.isEmpty {
-                    if let unassignedLabel {
-                        Section {
-                            Button {
-                                choose(nil)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: unassignedIcon)
-                                        .foregroundStyle(.secondary)
-                                    Text(unassignedLabel)
-                                    Spacer()
-                                    if selectedId == nil { LocationPickerCheckmark() }
-                                }
-                            }
-                            .tint(.primary)
-                        }
-                    }
-
-                    LocationTreeSections(
-                        viewModel: viewModel,
-                        selectedId: selectedId,
-                        excluding: excluding
-                    ) { choose($0) }
-                } else {
-                    ForEach(matches, id: \.location.id) { entry in
-                        Button {
-                            choose(entry.location.id)
-                        } label: {
-                            HStack(spacing: 10) {
-                                Text(entry.location.emoji ?? "📍")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.location.name)
-                                    Text(viewModel.displayPath(for: entry.location))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if selectedId == entry.location.id { LocationPickerCheckmark() }
-                            }
-                        }
-                        .tint(.primary)
-                    }
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    AppSectionHeading(title: "Find a home", subtitle: subtitle)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
+                LocationSelectionSections(
+                    viewModel: viewModel,
+                    selectedId: selectedId,
+                    unassignedLabel: unassignedLabel,
+                    unassignedIcon: unassignedIcon,
+                    excluding: excluding,
+                    searchText: searchText,
+                    onSelect: choose
+                )
             }
-            .overlay {
-                if !searchText.isEmpty && matches.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                }
-            }
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -243,6 +315,7 @@ struct LocationSearchSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .tint(.appPrimary)
         }
     }
 

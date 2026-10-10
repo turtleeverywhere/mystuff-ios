@@ -13,9 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Switching to Mock Data
 
-In `StuffViewModel.swift`, swap the service line:
+Launch a Debug build with `-ui-preview` to use demo data without signing in. This is an opt-in UI verification path and is ignored in Release builds. It skips social sync and notification prompts.
+
+For previews or other development callers, inject services:
 ```swift
-private let service: DataService = MockDataService()  // instead of FirebaseDataService()
+StuffViewModel(service: MockDataService(), storageService: MockStorageService())
 ```
 
 ## Architecture

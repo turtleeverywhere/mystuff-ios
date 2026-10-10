@@ -75,13 +75,14 @@ users/
 
 ## Development
 
-To run with mock data instead of Firebase:
+To inspect the UI without signing in, add `-ui-preview` to the MyStuff scheme's **Run → Arguments Passed On Launch** in a Debug build. This uses in-memory demo data and skips social sync and notification prompts. Release builds ignore the flag.
 
-In `StuffViewModel.swift`, swap the service line:
+Views and previews can also inject mock services:
 ```swift
-private let service: DataService = MockDataService()
-// private let service: DataService = FirebaseDataService()
+StuffViewModel(service: MockDataService(), storageService: MockStorageService())
 ```
+
+The shared visual conventions are documented in [the UI design system](design-system/mystuff/MASTER.md).
 
 ## Security Note
 

@@ -30,70 +30,96 @@ struct ItemQuickUpdateSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Item") {
-                    HStack {
-                        Text(item.name)
-                            .font(.headline)
-                        Spacer()
-                    }
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    itemSummary
 
-                Section("Location Photo") {
-                    photoRow
-                    Button {
-                        showPhotoSource = true
-                    } label: {
-                        Label(newPhotoData != nil ? "Retake" : "Take New Photo", systemImage: "camera")
-                    }
-                }
-
-                Section("Location") {
-                    LocationPickerRow(
-                        viewModel: viewModel,
-                        label: "Location",
-                        pickerTitle: "Choose Location",
-                        selection: locationBinding
-                    )
-
-                    if QRScannerView.isSupported {
-                        Button {
-                            showLocationScanner = true
-                        } label: {
-                            Label("Scan Location QR", systemImage: "qrcode.viewfinder")
+                    VStack(alignment: .leading, spacing: 12) {
+                        AppSectionHeading(title: "Storage location", subtitle: "Choose where this item will live.")
+                        VStack(alignment: .leading, spacing: 12) {
+                            LocationPickerRow(
+                                viewModel: viewModel,
+                                label: "Store in",
+                                pickerTitle: "Store this item",
+                                selection: locationBinding
+                            )
+                            Divider().overlay(Color.appBorder)
+                            if QRScannerView.isSupported {
+                                Button {
+                                    showLocationScanner = true
+                                } label: {
+                                    Label("Scan location QR", systemImage: "qrcode.viewfinder")
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                }
+                            }
+                            NFCScanButton(accepts: .location) { target in
+                                selectScanned(target)
+                            } label: { scanning in
+                                Label(scanning ? "Hold near tag…" : "Scan location NFC tag", systemImage: "wave.3.right")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            Button {
+                                showLocationFormSheet = true
+                            } label: {
+                                Label("New location", systemImage: "plus.circle")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
                         }
+                        .font(.body.weight(.medium))
+                        .padding(16)
+                        .appCard()
                     }
 
-                    NFCScanButton(accepts: .location) { target in
-                        selectScanned(target)
-                    } label: { scanning in
-                        Label(
-                            scanning ? "Hold near tag…" : "Scan Location NFC Tag",
-                            systemImage: "wave.3.right"
-                        )
-                    }
-
-                    Button {
-                        showLocationFormSheet = true
-                    } label: {
-                        Label("New Location...", systemImage: "plus.circle")
+                    VStack(alignment: .leading, spacing: 12) {
+                        AppSectionHeading(title: "Location photo", subtitle: "Optional: capture the shelf or spot to find it later.")
+                        VStack(alignment: .leading, spacing: 12) {
+                            photoRow
+                            Button {
+                                showPhotoSource = true
+                            } label: {
+                                Label(newPhotoData != nil ? "Change photo" : "Add location photo", systemImage: "camera")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .font(.body.weight(.medium))
+                        }
+                        .padding(16)
+                        .appCard()
                     }
                 }
+                .frame(maxWidth: 600)
+                .padding(20)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Update Item")
+            .background(Color.appBackground)
+            .safeAreaInset(edge: .bottom) {
+                Button(action: save) {
+                    HStack(spacing: 10) {
+                        if isSaving { ProgressView().tint(.appOnHero) }
+                        Text(isSaving ? "Saving…" : "Save location")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(AppPrimaryButtonStyle())
+                .disabled(isSaving)
+                .frame(maxWidth: 600)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color.appBackground)
+            }
+            .disabled(isSaving)
+            .navigationTitle("Store item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .disabled(isSaving)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving..." : "Save") { save() }
-                        .disabled(isSaving)
-                }
             }
+            .tint(.appPrimary)
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
+        .interactiveDismissDisabled(isSaving)
         .sheet(isPresented: $showLocationFormSheet) {
             LocationFormSheet(
                 viewModel: viewModel,
@@ -159,40 +185,58 @@ struct ItemQuickUpdateSheet: View {
         }
     }
 
+    private var itemSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Ready to store", systemImage: "shippingbox")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.appHeroSecondary)
+            Text(item.name)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(Color.appOnHero)
+                .accessibilityAddTraits(.isHeader)
+            Text("Currently: " + (viewModel.location(for: item).map { viewModel.displayPath(for: $0) } ?? "Unassigned"))
+                .font(.subheadline)
+                .foregroundStyle(Color.appHeroSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color.appHero, in: RoundedRectangle(cornerRadius: 24))
+    }
+
     @ViewBuilder
     private var photoRow: some View {
         if let newPhotoData, let uiImage = UIImage(data: newPhotoData) {
-            HStack {
+            HStack(spacing: 16) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                Spacer()
-                Text("New photo")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .accessibilityLabel("New location photo")
+                Text("New photo ready")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTertiary)
             }
         } else if item.hasLocationPhoto {
-            HStack {
+            HStack(spacing: 16) {
                 PhotoView(item: item, kind: .location, size: .thumbnail(240)) { image in
                     image
                         .resizable()
                         .scaledToFill()
                         .frame(width: 80, height: 80)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                 } placeholder: {
                     ProgressView().frame(width: 80, height: 80)
                 }
-                Spacer()
+                .accessibilityLabel("Current location photo")
                 Text("Current photo")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTertiary)
             }
         } else {
-            Text("No photo yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Label("No location photo yet", systemImage: "photo")
+                .font(.subheadline)
+                .foregroundStyle(Color.appTertiary)
         }
     }
 

@@ -14,8 +14,10 @@ struct NFCBadge: View {
             }
         }
         .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Paired tag")
         .padding(.horizontal, iconOnly ? 6 : 8)
         .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(Color.appSurfaceMuted, in: Capsule())
     }
 }

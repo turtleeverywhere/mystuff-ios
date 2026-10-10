@@ -219,10 +219,12 @@ extension View {
     ) -> some View {
         if previewEnabled {
             self
+                .accessibilityAction { onOpen() }
+                .accessibilityAction(named: Text("Preview photo")) { onPreview() }
                 .onTapGesture(count: 2, perform: onPreview)
                 .onTapGesture(perform: onOpen)
         } else {
-            self.onTapGesture(perform: onOpen)
+            self.accessibilityAction { onOpen() }.onTapGesture(perform: onOpen)
         }
     }
 }

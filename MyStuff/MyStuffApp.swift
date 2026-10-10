@@ -46,6 +46,7 @@ struct MyStuffApp: App {
                 LinearGradient.appBackground.ignoresSafeArea()
                 RootView(authService: authService)
             }
+            .tint(.appPrimary)
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
             }
@@ -56,10 +57,13 @@ struct MyStuffApp: App {
 /// Root view that switches between sign-in and the main app.
 struct RootView: View {
     @Bindable var authService: AuthService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if authService.isLoading {
+            if AppPreview.isEnabled {
+                ContentView(authService: authService)
+            } else if authService.isLoading {
                 ProgressView()
                     .scaleEffect(1.5)
             } else if authService.isSignedIn {
@@ -70,7 +74,7 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: authService.isSignedIn)
-        .animation(.easeInOut(duration: 0.3), value: authService.isLoading)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: authService.isSignedIn)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: authService.isLoading)
     }
 }

@@ -18,6 +18,8 @@ struct ItemsView: View {
     @State private var showFilters = false
     @AppStorage("itemsViewMode") private var viewMode = "list"
     @AppStorage("galleryColumns") private var galleryColumns = 2
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isGallery: Bool { viewMode == "gallery" }
@@ -58,7 +60,9 @@ struct ItemsView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if viewModel.items.isEmpty {
+                if viewModel.isLoading && viewModel.items.isEmpty {
+                    ProgressView("Loading your items…")
+                } else if viewModel.items.isEmpty {
                     emptyState
                 } else if isGallery {
                     itemsGallery
@@ -66,15 +70,17 @@ struct ItemsView: View {
                     itemsList
                 }
             }
+            .background(LinearGradient.appBackground)
             .navigationTitle("Items")
-            .searchable(text: $viewModel.searchText, prompt: "Search items...")
+            .searchable(text: $viewModel.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search items...")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingAddSheet = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add item", systemImage: "plus")
                     }
+                    .accessibilityLabel("Add item")
                 }
                 if isGallery && horizontalSizeClass == .regular {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -83,10 +89,11 @@ struct ItemsView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        withAnimation { viewMode = isGallery ? "list" : "gallery" }
+                        withAnimation(reduceMotion ? nil : .snappy) { viewMode = isGallery ? "list" : "gallery" }
                     } label: {
                         Image(systemName: isGallery ? "list.bullet" : "square.grid.2x2")
                     }
+                    .accessibilityLabel(isGallery ? "Show list" : "Show gallery")
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
@@ -94,6 +101,7 @@ struct ItemsView: View {
                     } label: {
                         Image(systemName: "folder")
                     }
+                    .accessibilityLabel("Manage categories")
                 }
             }
             .sheet(isPresented: $showingAddSheet) {
@@ -203,6 +211,8 @@ struct ItemsView: View {
     private var itemsList: some View {
         List {
             Section {
+                AppSectionHeading(title: "Your collection", subtitle: "\(visibleItems.count) of \(viewModel.items.count) items")
+                    .listRowBackground(Color.clear)
                 filterBar
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.clear)
@@ -217,10 +227,14 @@ struct ItemsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func itemRow(_ item: Item) -> some View {
         itemRowBody(item)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Opens item editor")
             .itemTapGestures(
                 previewEnabled: item.hasItemPhoto,
                 onPreview: { previewItem = item },
@@ -229,52 +243,56 @@ struct ItemsView: View {
     }
 
     private func itemRowBody(_ item: Item) -> some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             itemPhotoCircle(item)
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    if let notes = item.notes, !notes.isEmpty {
-                        Text(notes)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(item.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let notes = item.notes, !notes.isEmpty {
+                    Text(notes).font(.subheadline).foregroundStyle(Color.appTertiary).lineLimit(2)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        locationBadge(for: item)
+                        categoryBadge(for: item)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 6) {
+                        locationBadge(for: item)
+                        categoryBadge(for: item)
                     }
                 }
-                Spacer()
-                if viewModel.isMisplaced(item) {
-                    MisplacedBadge(iconOnly: true)
+                HStack(spacing: 8) {
+                    if viewModel.isMisplaced(item) { MisplacedBadge() }
+                    if !item.pairedTags.isEmpty { NFCBadge(iconOnly: true) }
+                    sharedBadge(for: item)
                 }
-                if !item.pairedTags.isEmpty {
-                    NFCBadge(iconOnly: true)
-                }
-                categoryBadge(for: item)
-                locationBadge(for: item)
-                sharedBadge(for: item)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                .foregroundStyle(Color.appTertiary).accessibilityHidden(true)
+                .padding(.top, 12)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .accessibilityAddTraits(.isButton)
+        .listRowBackground(Color.appSurface)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                itemToDelete = item
-            } label: {
+            Button(role: .destructive) { itemToDelete = item } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .contextMenu {
-            itemMenuItems(item)
-        }
+        .contextMenu { itemMenuItems(item) }
     }
 
     // MARK: - Items Gallery
 
     private var itemsGallery: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            LazyVStack(spacing: 20) {
+                AppSectionHeading(title: "Your collection", subtitle: "\(visibleItems.count) of \(viewModel.items.count) items")
                 filterBar
 
                 if visibleItems.isEmpty {
@@ -284,7 +302,7 @@ struct ItemsView: View {
                         items: visibleItems,
                         isMisplaced: { viewModel.isMisplaced($0) },
                         kind: .item,
-                        columns: horizontalSizeClass == .regular ? galleryColumns : 2,
+                        columns: dynamicTypeSize.isAccessibilitySize ? 1 : (horizontalSizeClass == .regular ? galleryColumns : 2),
                         onTap: { editingItem = $0 },
                         onAddPhoto: { item in
                             photoSourceItem = item
@@ -297,14 +315,20 @@ struct ItemsView: View {
                     )
                 }
             }
-            .padding()
+            .padding(16)
+            .frame(maxWidth: 900)
+            .frame(maxWidth: .infinity)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Shared Menu
 
     @ViewBuilder
     private func itemMenuItems(_ item: Item) -> some View {
+        if item.hasItemPhoto {
+            Button { previewItem = item } label: { Label("Preview photo", systemImage: "photo") }
+        }
         PutBackMenuButton(item: item, viewModel: viewModel)
         Button {
             movingItem = item
@@ -339,7 +363,7 @@ struct ItemsView: View {
                 image
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 40, height: 40)
+                    .frame(width: 48, height: 48)
                     .clipShape(Circle())
             } placeholder: {
                 photoPlaceholderCircle
@@ -358,8 +382,10 @@ struct ItemsView: View {
 
     private var photoPlaceholderCircle: some View {
         Image(systemName: "photo.circle.fill")
-            .font(.system(size: 34))
-            .foregroundStyle(.tertiary)
+            .font(.title2)
+            .foregroundStyle(Color.appPrimary)
+            .frame(width: 48, height: 48)
+            .background(Color.appSurfaceMuted, in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Location Badge
@@ -368,21 +394,20 @@ struct ItemsView: View {
         Group {
             if let location = viewModel.location(for: item) {
                 HStack(spacing: 4) {
-                    Text(location.emoji ?? "📍")
-                        .font(.caption)
+                    Image(systemName: "mappin.and.ellipse").accessibilityHidden(true)
                     Text(location.name)
                         .font(.caption)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
+                .background(Color.appSurfaceMuted, in: Capsule())
             } else {
                 Text("Unassigned")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color.appSurfaceMuted, in: Capsule())
             }
         }
     }
@@ -407,7 +432,7 @@ struct ItemsView: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color.appSurfaceMuted, in: Capsule())
             }
         }
     }
@@ -418,12 +443,12 @@ struct ItemsView: View {
         ContentUnavailableView {
             Label("No Items Yet", systemImage: "shippingbox")
         } description: {
-            Text("Tap + to add your first item and start tracking where your stuff lives.")
+            Text("Add the things you want to keep track of, then give each one a location.")
         } actions: {
             Button("Add Item") {
                 showingAddSheet = true
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(AppPrimaryButtonStyle())
         }
     }
 
@@ -433,7 +458,10 @@ struct ItemsView: View {
         ContentUnavailableView {
             Label("No items match these filters", systemImage: "line.3.horizontal.decrease")
         } description: {
-            Text("Try clearing a filter or the search field.")
+            Text("Try another search or clear your filters.")
+        } actions: {
+            Button("Clear search & filters") { filter = ItemFilter(); viewModel.searchText = "" }
+                .buttonStyle(.bordered)
         }
     }
 }
@@ -529,8 +557,18 @@ struct ItemFormSheet: View {
         NavigationStack {
             Form {
                 Section("Details") {
-                    TextField("Item name", text: $name)
-                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Item name").font(.subheadline.weight(.medium)).foregroundStyle(Color.appTertiary)
+                        TextField("e.g. Spare keys", text: $name)
+                            .accessibilityLabel("Item name")
+                    }
+                    .padding(.vertical, 4)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notes (optional)").font(.subheadline.weight(.medium)).foregroundStyle(Color.appTertiary)
+                        TextField("Add a description or useful details", text: $notes, axis: .vertical)
+                            .accessibilityLabel("Notes, optional")
+                    }
+                    .padding(.vertical, 4)
                         .lineLimit(3...6)
                 }
 

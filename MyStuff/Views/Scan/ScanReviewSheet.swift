@@ -40,20 +40,10 @@ struct ScanReviewSheet: View {
                     Button {
                         showDestinationPicker = true
                     } label: {
-                        HStack(spacing: 10) {
-                            Text(destination?.emoji ?? "📍")
-                            if let destination {
-                                Text(viewModel.displayPath(for: destination))
-                            } else {
-                                Text("Choose location").foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
+                        LocationSelectionLabel(viewModel: viewModel, locationId: session.destinationId)
                     }
-                    .tint(.primary)
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.appSurface)
                 }
 
                 Section {
@@ -77,6 +67,9 @@ struct ScanReviewSheet: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.appBackground)
+            .tint(.appPrimary)
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -91,7 +84,8 @@ struct ScanReviewSheet: View {
             .sheet(isPresented: $showDestinationPicker) {
                 LocationSearchSheet(
                     viewModel: viewModel,
-                    title: "Destination",
+                    title: "Store scanned items",
+                    subtitle: "All selected items will go to this location.",
                     selectedId: session.destinationId,
                     unassignedLabel: nil
                 ) { session.destinationId = $0 }

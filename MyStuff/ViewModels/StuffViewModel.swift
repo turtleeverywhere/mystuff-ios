@@ -27,11 +27,13 @@ final class StuffViewModel {
 
     // MARK: - Private
 
-    /// Swap this single line to switch between Mock and Firebase:
-    // private let service: DataService = MockDataService()
-    private let service: DataService = FirebaseDataService()
-    // private let storageService: StorageService = MockStorageService()
-    private let storageService: StorageService = FirebaseStorageService()
+    private let service: DataService
+    private let storageService: StorageService
+
+    init(service: DataService = FirebaseDataService(), storageService: StorageService = FirebaseStorageService()) {
+        self.service = service
+        self.storageService = storageService
+    }
 
     /// On-device recognition references for the signed-in user. Lazy: the uid is
     /// only known once `service` exists, and most launches never open the scanner.

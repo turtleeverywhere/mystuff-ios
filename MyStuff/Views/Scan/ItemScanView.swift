@@ -81,7 +81,8 @@ struct ItemScanView: View {
         .sheet(isPresented: $showDestinationPicker) {
             LocationSearchSheet(
                 viewModel: viewModel,
-                title: "Destination",
+                title: "Store scanned items",
+                subtitle: "All items in this scan will go to the selected location.",
                 selectedId: session.destinationId,
                 unassignedLabel: nil
             ) { session.destinationId = $0 }
@@ -142,19 +143,14 @@ struct ItemScanView: View {
         Button {
             showDestinationPicker = true
         } label: {
-            HStack(spacing: 8) {
-                Text(destination?.emoji ?? "📍")
-                Text(destination.map { viewModel.displayPath(for: $0) } ?? "Choose location")
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: Capsule())
+            LocationSelectionLabel(viewModel: viewModel, locationId: session.destinationId)
+                .padding(14)
+                .appCard()
         }
-        .tint(.primary)
-        .padding(.top, 8)
+        .buttonStyle(.plain)
+        .accessibilityHint("Choose where to store the scanned items")
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     private var statusText: String {

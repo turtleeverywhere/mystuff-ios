@@ -98,92 +98,70 @@ private struct GalleryTile: View {
     }
 
     var body: some View {
-        tileBody
-            .itemTapGestures(
-                previewEnabled: hasPhoto && onDoubleTap != nil,
-                onPreview: { onDoubleTap?(item) },
-                onOpen: {
-                    if hasPhoto {
-                        onTap(item)
-                    } else {
-                        onAddPhoto(item)
-                    }
-                }
-            )
-    }
-
-    private var tileBody: some View {
-        Color.clear
-            .aspectRatio(1, contentMode: .fit)
-            .overlay {
-                if hasPhoto {
-                    PhotoView(
-                        item: item,
-                        kind: kind,
-                        size: .thumbnail(480)
-                    ) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        placeholderFill
-                    }
-                } else {
-                    placeholderFill
-                }
-            }
-            .overlay(alignment: .bottom) {
-                nameOverlay
-            }
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 4) {
-                    if isMisplaced {
-                        MisplacedBadge(iconOnly: true)
-                    }
-                    if !item.pairedTags.isEmpty {
-                        NFCBadge(iconOnly: true)
-                    }
-                }
-                .padding(6)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
-            .accessibilityAddTraits(.isButton)
-    }
-
-    private var nameOverlay: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(item.name)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-            if let changedAt = item.locationChangedAt {
-                Text("Stored \(changedAt, format: .relative(presentation: .named))")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.75))
-                    .lineLimit(1)
-            }
+        if hasPhoto, let onDoubleTap {
+            tileButton.highPriorityGesture(TapGesture(count: 2).onEnded { onDoubleTap(item) })
+        } else {
+            tileButton
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.55)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+    }
+
+    private var tileButton: some View {
+        Button { onTap(item) } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Color.appSurfaceMuted
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay {
+                        if hasPhoto {
+                            PhotoView(item: item, kind: kind, size: .thumbnail(480)) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: { placeholderFill }
+                        } else { placeholderFill }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        HStack(spacing: 4) {
+                            if isMisplaced { MisplacedBadge(iconOnly: true) }
+                            if !item.pairedTags.isEmpty { NFCBadge(iconOnly: true) }
+                        }
+                        .padding(8)
+                    }
+                    .clipped()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.appText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let changedAt = item.locationChangedAt {
+                        Text("Stored \(changedAt, format: .relative(presentation: .named))")
+                            .font(.caption).foregroundStyle(Color.appTertiary)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.appBorder, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 20))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAction(named: Text(hasPhoto ? "Change photo" : "Add photo")) { onAddPhoto(item) }
+        .accessibilityLabel(item.name)
+        .accessibilityHint("Opens item details")
+
     }
 
     private var placeholderFill: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-            Image(systemName: "photo")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 8) {
+            Image(systemName: "shippingbox")
+                .font(.largeTitle).symbolRenderingMode(.hierarchical)
+            Text("No photo yet").font(.caption)
         }
+        .foregroundStyle(Color.appTertiary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.appSurfaceMuted)
+        .accessibilityHidden(true)
     }
+
 }
 
 #Preview {

@@ -58,14 +58,16 @@ struct ItemFilterBar: View {
     let putBackTargets: [Item]
     let onPutAllBack: () -> Void
     let onClearAll: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var confirmingPutAllBack = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation { isExpanded.toggle() }
+                withAnimation(reduceMotion ? nil : .snappy) { isExpanded.toggle() }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 8) {
                     Image(systemName: "line.3.horizontal.decrease")
                     Text("Filters")
                         .font(.subheadline)
@@ -74,22 +76,25 @@ struct ItemFilterBar: View {
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.accentColor, in: Capsule())
+                            .background(Color.appHero, in: Capsule())
                             .foregroundStyle(.white)
                     }
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.appPrimary)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue("\(filter.activeCount) active, \(isExpanded ? "expanded" : "collapsed")")
 
             if isExpanded {
                 if !viewModel.categories.isEmpty {
                     Text("Categories")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.appTertiary)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(viewModel.categories) { category in
@@ -107,7 +112,7 @@ struct ItemFilterBar: View {
                 if !viewModel.locations.isEmpty {
                     Text("Locations")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.appTertiary)
                     // Chips can't indent, so hierarchy shows two other ways: a
                     // divider between top-level places, and a "↳" per level for
                     // sublocations within one.
@@ -119,7 +124,7 @@ struct ItemFilterBar: View {
                                 }
                                 ForEach(group.entries, id: \.location.id) { entry in
                                     chip(
-                                        label: String(repeating: "↳", count: entry.depth) + (entry.location.emoji ?? "📍") + " " + entry.location.name,
+                                        label: String(repeating: "↳ ", count: entry.depth) + entry.location.name,
                                         isSelected: filter.locationIds.contains(entry.location.id)
                                     ) {
                                         toggle(entry.location.id, in: &filter.locationIds)
@@ -132,20 +137,22 @@ struct ItemFilterBar: View {
 
                 Text("Status")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
-                chip(label: "⚠️ Misplaced", isSelected: filter.misplacedOnly) {
+                    .foregroundStyle(Color.appTertiary)
+                chip(label: "Misplaced", isSelected: filter.misplacedOnly) {
                     filter.misplacedOnly.toggle()
                 }
 
-                actionRow
             }
+            actionRow
         }
+        .padding(16)
+        .appCard()
         .confirmationDialog(
             "Put back \(putBackTargets.count) \(putBackTargets.count == 1 ? "item" : "items")?",
             isPresented: $confirmingPutAllBack,
             titleVisibility: .visible
         ) {
-            Button("Put All Back", role: .destructive, action: onPutAllBack)
+            Button("Put All Back", action: onPutAllBack)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each item moves to its supposed location.")
@@ -158,7 +165,8 @@ struct ItemFilterBar: View {
     private var actionRow: some View {
         let showPutBack = filter.misplacedOnly && !putBackTargets.isEmpty
         if showPutBack || isFiltering {
-            HStack(spacing: 12) {
+            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+            layout {
                 if showPutBack {
                     Button {
                         confirmingPutAllBack = true
@@ -166,7 +174,7 @@ struct ItemFilterBar: View {
                         Text("Put All Back (\(putBackTargets.count))")
                             .frame(maxWidth: .infinity, minHeight: 30)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(AppPrimaryButtonStyle())
                 }
                 if isFiltering {
                     Button(action: onClearAll) {
@@ -188,13 +196,18 @@ struct ItemFilterBar: View {
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor.opacity(0.2) : .clear, in: Capsule())
-                .overlay(Capsule().stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1))
+            HStack(spacing: 6) {
+                if isSelected { Image(systemName: "checkmark").accessibilityHidden(true) }
+                Text(label).fixedSize(horizontal: true, vertical: false)
+            }
+            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+            .foregroundStyle(isSelected ? Color.appOnHero : Color.appText)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(isSelected ? Color.appHero : Color.appSurfaceMuted, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.appBorder, lineWidth: isSelected ? 0 : 1))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

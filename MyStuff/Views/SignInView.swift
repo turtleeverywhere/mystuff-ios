@@ -2,87 +2,98 @@ import SwiftUI
 
 struct SignInView: View {
     @Bindable var authService: AuthService
-    @State private var isAnimating = false
+    @State private var isSigningIn = false
+    @ScaledMetric(relativeTo: .largeTitle) private var iconSize = 64
 
     var body: some View {
-        ZStack {
-            LinearGradient.appBackground
-                .ignoresSafeArea()
-
-            VStack(spacing: 40) {
-                Spacer()
-
-                // App icon & title
-                VStack(spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 32) {
+                VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "shippingbox.fill")
-                        .font(.system(size: 72))
+                        .font(.system(size: iconSize))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.primary)
-                        .scaleEffect(isAnimating ? 1.0 : 0.8)
-                        .opacity(isAnimating ? 1.0 : 0.0)
-                        .animation(.spring(duration: 0.8, bounce: 0.4), value: isAnimating)
-
-                    Text("MyStuff")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .opacity(isAnimating ? 1.0 : 0.0)
-                        .offset(y: isAnimating ? 0 : 20)
-                        .animation(.easeOut(duration: 0.6).delay(0.2), value: isAnimating)
-
-                    Text("Know where everything lives.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .opacity(isAnimating ? 1.0 : 0.0)
-                        .offset(y: isAnimating ? 0 : 10)
-                        .animation(.easeOut(duration: 0.6).delay(0.4), value: isAnimating)
+                        .foregroundStyle(Color.appPrimary)
+                        .padding(24)
+                        .background(Color.appSurface, in: RoundedRectangle(cornerRadius: 28))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("MyStuff")
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .foregroundStyle(Color.appText)
+                        Text("Less searching.\nMore living.")
+                            .font(.system(.title, design: .rounded, weight: .semibold))
+                            .foregroundStyle(Color.appText)
+                        Text("Keep track of what you own and where it lives.")
+                            .font(.body).foregroundStyle(Color.appTertiary)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 20) {
+                    benefit("A place for everything", detail: "Organize items by room, shelf, or box.", symbol: "mappin.and.ellipse")
+                    benefit("Find it when you need it", detail: "Search your inventory in seconds.", symbol: "magnifyingglass")
+                    benefit("Always with you", detail: "Your inventory syncs across your devices.", symbol: "icloud")
                 }
 
-                Spacer()
-
-                // Sign-in card
-                VStack(spacing: 20) {
-                    Button {
-                        Task { await authService.signInWithGoogle() }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.badge.key.fill")
-                                .font(.title3)
-                            Text("Sign in with Google")
-                                .font(.headline)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.roundedRectangle(radius: 14))
-                    .tint(.primary.opacity(0.85))
-
-                    if let error = authService.errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                            .transition(.opacity)
-                    }
-
-                    Text("Your data is stored securely and privately.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(28)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
+            }
+            .padding(24)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
+        }
+        .background(LinearGradient.appBackground.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            signInCard
                 .padding(.horizontal, 24)
-                .opacity(isAnimating ? 1.0 : 0.0)
-                .offset(y: isAnimating ? 0 : 30)
-                .animation(.easeOut(duration: 0.6).delay(0.6), value: isAnimating)
+                .padding(.bottom, 16)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+        }
+    }
 
-                Spacer()
-                    .frame(height: 40)
+    private var signInCard: some View {
+        VStack(spacing: 16) {
+            Button {
+                guard !isSigningIn else { return }
+                isSigningIn = true
+                Task {
+                    await authService.signInWithGoogle()
+                    isSigningIn = false
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    if isSigningIn { ProgressView().tint(Color.appOnHero) }
+                    Text(isSigningIn ? "Signing in…" : "Continue with Google").font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(Color.appOnHero)
+                .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 16))
+            .tint(Color.appHero)
+            .disabled(isSigningIn)
+            if let error = authService.errorMessage {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.subheadline).foregroundStyle(Color.appAccent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Label("Your inventory is private by default.", systemImage: "lock")
+                .font(.caption).foregroundStyle(Color.appTertiary)
+        }
+        .padding(24)
+        .appCard()
+    }
+
+    private func benefit(_ title: String, detail: String, symbol: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: symbol)
+                .font(.title3).foregroundStyle(Color.appPrimary)
+                .frame(width: 28, height: 28).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(Color.appText)
+                Text(detail).font(.subheadline).foregroundStyle(Color.appTertiary)
             }
         }
-        .onAppear { isAnimating = true }
     }
 }
 
-#Preview {
-    SignInView(authService: AuthService())
-}
+#Preview { SignInView(authService: AuthService()) }

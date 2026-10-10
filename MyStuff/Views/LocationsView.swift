@@ -11,7 +11,8 @@ struct LocationsView: View {
     @State private var addingSublocationParent: Location?
     @State private var movingLocation: Location?
     @State private var searchText = ""
-    @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Scanned code resolved to an id we no longer hold — surface it instead of
     /// dismissing the scanner with nothing happening.
     @State private var unknownScan = false
@@ -19,18 +20,17 @@ struct LocationsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if viewModel.locations.isEmpty {
+                if viewModel.isLoading && viewModel.locations.isEmpty {
+                    ProgressView("Loading your locations…")
+                } else if viewModel.locations.isEmpty {
                     emptyState
                 } else {
                     locationsList
                 }
             }
+            .background(LinearGradient.appBackground)
             .navigationTitle("Locations")
-            .safeAreaInset(edge: .bottom) {
-                if !viewModel.locations.isEmpty {
-                    searchBar
-                }
-            }
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search locations")
             .navigationDestination(for: Location.self) { loc in
                 LocationDetailView(location: loc, viewModel: viewModel)
             }
@@ -39,8 +39,9 @@ struct LocationsView: View {
                     Button {
                         showingAddSheet = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add location", systemImage: "plus")
                     }
+                    .accessibilityLabel("Add location")
                 }
                 ToolbarItemGroup(placement: .topBarLeading) {
                     if QRScannerView.isSupported {
@@ -49,6 +50,7 @@ struct LocationsView: View {
                         } label: {
                             Image(systemName: "qrcode.viewfinder")
                         }
+                        .accessibilityLabel("Scan QR code")
                     }
                     NFCScanButton { target in
                         openScanned(target)
@@ -60,7 +62,7 @@ struct LocationsView: View {
                                 Image(systemName: "wave.3.right")
                             }
                         }
-                        .frame(width: 20)
+                        .frame(minWidth: 44, minHeight: 44)
                     }
                 }
             }
@@ -177,12 +179,16 @@ struct LocationsView: View {
     /// in it, which drops keyboard focus after the first character.
     private var locationsList: some View {
         List {
+            AppSectionHeading(title: "A place for everything", subtitle: "\(viewModel.locations.count) locations · \(viewModel.items.count - viewModel.unassignedItems.count) items stored")
+                .listRowBackground(Color.clear)
             if trimmedSearch.isEmpty {
                 treeRows
             } else {
                 searchRows
             }
         }
+        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .overlay {
             if !trimmedSearch.isEmpty && searchResults.isEmpty {
                 ContentUnavailableView.search(text: trimmedSearch)
@@ -197,7 +203,7 @@ struct LocationsView: View {
                     // Expand/collapse button
                     if hasChildren {
                         Button {
-                            withAnimation {
+                            withAnimation(reduceMotion ? nil : .snappy) {
                                 if expandedIds.contains(entry.location.id) {
                                     expandedIds.remove(entry.location.id)
                                 } else {
@@ -211,7 +217,9 @@ struct LocationsView: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("\(expandedIds.contains(entry.location.id) ? "Collapse" : "Expand") \(entry.location.name)")
+                        .accessibilityValue(expandedIds.contains(entry.location.id) ? "Expanded" : "Collapsed")
                     } else {
                         Spacer().frame(width: 44)
                     }
@@ -239,7 +247,8 @@ struct LocationsView: View {
                         Label("Move", systemImage: "folder")
                     }
                 }
-                .padding(.leading, CGFloat(entry.depth) * 24)
+                .padding(.leading, CGFloat(min(entry.depth, dynamicTypeSize.isAccessibilitySize ? 1 : 3)) * 16)
+                .listRowBackground(Color.appSurface)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         locationToDelete = entry.location
@@ -253,40 +262,31 @@ struct LocationsView: View {
     /// Row content shared by the tree and the search results. `subtitle` carries the
     /// ancestor path in search results, where the tree indentation is gone.
     private func rowLabel(for location: Location, subtitle: String? = nil) -> some View {
-        HStack {
-            Text(location.emoji ?? "📍")
-                .font(.title2)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(location.name)
-                        .font(.body)
-                        .foregroundStyle(.primary)
+        HStack(alignment: .top, spacing: 12) {
+            LocationIcon(emoji: location.emoji)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(location.name).font(.body.weight(.semibold)).foregroundStyle(Color.appText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle).font(.subheadline).foregroundStyle(Color.appTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                let count = viewModel.recursiveItemCount(for: location)
+                Text("\(count) \(count == 1 ? "item" : "items")")
+                    .font(.subheadline).foregroundStyle(Color.appTertiary)
+                HStack(spacing: 8) {
                     if viewModel.isSharedWithMe(location) {
                         SharedBadge(iconOnly: true, ownerName: viewModel.friend(forUid: location.ownerId ?? "")?.displayName)
-                    } else if viewModel.isShared(location) {
-                        SharedBadge(iconOnly: true)
-                    }
-                    if !location.pairedTags.isEmpty {
-                        NFCBadge(iconOnly: true)
-                    }
-                }
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
+                    } else if viewModel.isShared(location) { SharedBadge(iconOnly: true) }
+                    if !location.pairedTags.isEmpty { NFCBadge(iconOnly: true) }
                 }
             }
-            Spacer()
-            Text("\(viewModel.recursiveItemCount(for: location)) items")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                .foregroundStyle(Color.appTertiary).padding(.top, 12).accessibilityHidden(true)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -341,35 +341,6 @@ struct LocationsView: View {
         viewModel.locationPath(for: location).dropLast().map(\.name).joined(separator: " > ")
     }
 
-    /// Sits in the bottom safe area, above the tab bar.
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search locations", text: $searchText)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .focused($searchFocused)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                    searchFocused = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.secondary.opacity(0.25), lineWidth: 1))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-    }
-
     // MARK: - Empty State
 
     private var emptyState: some View {
@@ -381,7 +352,7 @@ struct LocationsView: View {
             Button("Add Location") {
                 showingAddSheet = true
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(AppPrimaryButtonStyle())
         }
     }
 }
@@ -435,8 +406,16 @@ struct LocationFormSheet: View {
         NavigationStack {
             Form {
                 Section("Details") {
-                    TextField("Location name", text: $name)
-                    TextField("Emoji icon (optional)", text: $emoji)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Location name").font(.subheadline.weight(.medium)).foregroundStyle(Color.appTertiary)
+                        TextField("e.g. Hallway cupboard", text: $name).accessibilityLabel("Location name")
+                    }
+                    .padding(.vertical, 4)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Emoji (optional)").font(.subheadline.weight(.medium)).foregroundStyle(Color.appTertiary)
+                        TextField("Choose a personal icon", text: $emoji).accessibilityLabel("Location emoji, optional")
+                    }
+                    .padding(.vertical, 4)
                         .textInputAutocapitalization(.never)
                 }
 

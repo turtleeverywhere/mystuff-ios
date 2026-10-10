@@ -1,47 +1,61 @@
 import SwiftUI
+import UIKit
 
-/// Central palette. Change a hex value here to update the color across the app.
+/// Semantic colors keep surfaces and controls readable in both appearances.
 enum AppColor {
-    case background  // #1F363D — darkest, intended for surfaces / backgrounds
-    case primary     // #40798C — primary brand
-    case secondary   // #70A9A1 — secondary brand
-    case tertiary    // #9EC1A3 — tertiary / muted
-    case text        // #CFE0C3 — default foreground for text
-    case accent      // #EE7674 — accent / call-to-action / alert
+    case background, primary, secondary, tertiary, text, accent
 
     var color: Color {
         switch self {
-        case .background: return Color(hex: 0x1F363D)
-        case .primary:    return Color(hex: 0x40798C)
-        case .secondary:  return Color(hex: 0x70A9A1)
-        case .tertiary:   return Color(hex: 0x9EC1A3)
-        case .text:       return Color(hex: 0xCFE0C3)
-        case .accent:     return Color(hex: 0xEE7674)
+        case .background: return .adaptive(light: 0xF3F6F5, dark: 0x101C20)
+        case .primary: return .adaptive(light: 0x256374, dark: 0x8DCED3)
+        case .secondary: return .adaptive(light: 0x376D64, dark: 0xA0CFC3)
+        case .tertiary: return .adaptive(light: 0x52686D, dark: 0xAEC1C5)
+        case .text: return .adaptive(light: 0x18343B, dark: 0xE6F0ED)
+        case .accent: return .adaptive(light: 0xAA4342, dark: 0xFFABA4)
         }
     }
 }
 
 extension Color {
     static var appBackground: Color { AppColor.background.color }
-    static var appPrimary: Color    { AppColor.primary.color }
-    static var appSecondary: Color  { AppColor.secondary.color }
-    static var appTertiary: Color   { AppColor.tertiary.color }
-    static var appText: Color       { AppColor.text.color }
-    static var appAccent: Color     { AppColor.accent.color }
+    static var appPrimary: Color { AppColor.primary.color }
+    static var appSecondary: Color { AppColor.secondary.color }
+    static var appTertiary: Color { AppColor.tertiary.color }
+    static var appText: Color { AppColor.text.color }
+    static var appAccent: Color { AppColor.accent.color }
+    static var appSurface: Color { .adaptive(light: 0xFFFFFF, dark: 0x1B2B30) }
+    static var appSurfaceMuted: Color { .adaptive(light: 0xE7EFED, dark: 0x253A40) }
+    static var appBorder: Color { .adaptive(light: 0xCDDCD8, dark: 0x3D555B) }
+    static var appHero: Color { .adaptive(light: 0x234D58, dark: 0x203F48) }
+    static var appOnHero: Color { .white }
+    static var appHeroSecondary: Color { Color(hex: 0xD6E9E5) }
+
+    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
+        })
+    }
 
     init(hex: UInt32, alpha: Double = 1.0) {
-        let r = Double((hex >> 16) & 0xFF) / 255
-        let g = Double((hex >>  8) & 0xFF) / 255
-        let b = Double( hex        & 0xFF) / 255
-        self.init(.sRGB, red: r, green: g, blue: b, opacity: alpha)
+        self.init(.sRGB,
+                  red: Double((hex >> 16) & 0xFF) / 255,
+                  green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255,
+                  opacity: alpha)
     }
 }
 
 extension LinearGradient {
-    /// Default app background gradient — mid-blue → cream, top to bottom.
     static let appBackground = LinearGradient(
-        colors: [.appPrimary, .appText],
-        startPoint: .top,
-        endPoint: .bottom
+        colors: [.appBackground, .appSurfaceMuted],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
     )
 }

@@ -92,6 +92,7 @@ final class PhotoUploadManager: @unchecked Sendable {
 
     /// Queues a background upload of the full-size photo. Call after saving locally + updating the item.
     func enqueueUpload(itemId: String, filename: String, oldRemoteURL: String?) {
+        guard !AppPreview.isEnabled else { return }
         pending.removeAll { $0.itemId == itemId && $0.filename == filename }
         pending.append(PendingUpload(itemId: itemId, filename: filename, oldRemoteURL: oldRemoteURL))
         savePending()
@@ -129,6 +130,7 @@ final class PhotoUploadManager: @unchecked Sendable {
     var onUploadComplete: ((_ itemId: String, _ filename: String, _ remoteURL: String) async -> Void)?
 
     func processPending() async {
+        guard !AppPreview.isEnabled else { return }
         guard isConnected, !isProcessing, !pending.isEmpty else { return }
         isProcessing = true
         defer { isProcessing = false }
